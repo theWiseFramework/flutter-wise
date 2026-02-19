@@ -1,0 +1,11 @@
+{
+  "iconDefinitions": {
+    "_file": { "iconPath": "../assets/icons/default_file.svg" },
+    "_folder": { "iconPath": "../assets/icons/default_folder.svg" },
+    "_folder_open": { "iconPath": "../assets/icons/default_folder_opened.svg" }
+  },
+
+  "file": "_file",
+  "folder": "_folder",
+  "folderExpanded": "_folder_open"
+}

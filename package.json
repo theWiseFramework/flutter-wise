@@ -9,15 +9,84 @@
   "categories": [
     "Other"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "onCommand:flutterWise.initWorkspace",
+    "onCommand:flutterWise.undoWorkspaceInit"
+  ],
   "main": "./dist/extension.js",
   "contributes": {
+    "themes": [
+      {
+        "label": "Flutter Wise Dark Theme",
+        "uiTheme": "vs-dark",
+        "path": "./themes/flutter-wise-dark-theme.json"
+      }
+    ],
+    "iconThemes": [
+      {
+        "id": "flutter-wise-icons",
+        "label": "Flutter Wise Icons",
+        "path": "./themes/flutter-wise-icons.json",
+        "_watch": true
+      }
+    ],
     "commands": [
       {
-        "command": "flutter-wise.helloWorld",
-        "title": "Hello World"
+        "command": "flutterWise.initWorkspace",
+        "title": "Flutter Wise: Setup Workspace"
+      },
+      {
+        "command": "flutterWise.undoWorkspaceInit",
+        "title": "Flutter Wise: Undo Workspace Setup"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "Flutter Wise",
+      "properties": {
+        "flutterWise.initialized": {
+          "type": "boolean",
+          "default": false,
+          "scope": "resource",
+          "description": "Whether Flutter Wise has initialized this workspace."
+        },
+        "flutterWise.autoExcludeGeneratedFiles": {
+          "type": "boolean",
+          "default": true,
+          "scope": "resource",
+          "description": "Apply recommended excludes for generated Flutter files."
+        },
+        "flutterWise.appliedFilesExclude": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "scope": "resource",
+          "description": "Tracks which files.exclude globs were added by Flutter Wise."
+        },
+        "flutterWise.appliedSearchExclude": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "scope": "resource",
+          "description": "Tracks which search.exclude globs were added by Flutter Wise."
+        },
+        "flutterWise.useIconTheme": {
+          "type": "boolean",
+          "default": true,
+          "scope": "resource",
+          "description": "Use Flutter Wise icon theme when initializing the workspace."
+        },
+        "flutterWise.preferredIconThemeId": {
+          "type": "string",
+          "default": "flutter-wise-icons",
+          "scope": "resource",
+          "description": "Icon theme id to apply on initialization."
+        }
+      }
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run package",
