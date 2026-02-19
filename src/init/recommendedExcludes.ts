@@ -17,6 +17,7 @@ export const RECOMMENDED_FILES_EXCLUDE: Record<string, boolean> = {
   "**/android/gradle.properties": true,
   "**/android/.gitignore": true,
   "**/android/local.properties": true,
+  "devtools_options.yaml": true,
 };
 
 export const RECOMMENDED_SEARCH_EXCLUDE: Record<string, boolean> = {

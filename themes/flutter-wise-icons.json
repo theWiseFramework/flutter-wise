@@ -2,10 +2,94 @@
   "iconDefinitions": {
     "_file": { "iconPath": "../assets/icons/default_file.svg" },
     "_folder": { "iconPath": "../assets/icons/default_folder.svg" },
-    "_folder_open": { "iconPath": "../assets/icons/default_folder_opened.svg" }
+    "_folder_open": { "iconPath": "../assets/icons/default_folder_opened.svg" },
+
+    "dart": { "iconPath": "../assets/icons/file_type_dartlang.svg" },
+    "sh": { "iconPath": "../assets/icons/file_type_shell.svg" },
+    "markdown": { "iconPath": "../assets/icons/file_type_markdown.svg" },
+    "yaml": { "iconPath": "../assets/icons/file_type_yaml.svg" },
+    "kotlin": { "iconPath": "../assets/icons/file_type_kotlin.svg" },
+    "json": { "iconPath": "../assets/icons/file_type_json.svg" },
+
+    "shorebird": { "iconPath": "../assets/icons/file_type_shorebird.svg" },
+    "firebase": { "iconPath": "../assets/icons/file_type_firebase.svg" },
+    "flutter": { "iconPath": "../assets/icons/file_type_flutter.svg" },
+    "makefile": { "iconPath": "../assets/icons/file_type_makefile.svg" },
+    "git": { "iconPath": "../assets/icons/file_type_git.svg" },
+    "testFolder": { "iconPath": "../assets/icons/file_type_test.svg" },
+    "vscode": { "iconPath": "../assets/icons/file_type_vscode.svg" },
+    "github": { "iconPath": "../assets/icons/file_type_github.svg" },
+    "dash": { "iconPath": "../assets/icons/file_type_dash.png" },
+    "zed": { "iconPath": "../assets/icons/file_type_zed.png" },
+    "android": { "iconPath": "../assets/icons/file_type_android.svg" },
+    "assets": { "iconPath": "../assets/icons/file_type_assets.png" },
+    "ios": { "iconPath": "../assets/icons/file_type_ios.svg" },
+    "web": { "iconPath": "../assets/icons/file_type_web.svg" },
+    "fvm": { "iconPath": "../assets/icons/file_type_fvm.png" },
+    "macos": { "iconPath": "../assets/icons/folder_type_macos.svg" },
+    "linux": { "iconPath": "../assets/icons/folder_type_linux.svg" },
+    "windows": { "iconPath": "../assets/icons/folder_type_windows.svg" },
+    "readme": { "iconPath": "../assets/icons/file_type_readme.svg" },
+    "package": { "iconPath": "../assets/icons/file_type_package.svg" },
+    "settings": { "iconPath": "../assets/icons/file_type_settings.svg" },
+    "play": { "iconPath": "../assets/icons/file_type_play.svg" },
+    "xcode": { "iconPath": "../assets/icons/folder_type_xcode.svg" }
   },
 
   "file": "_file",
   "folder": "_folder",
-  "folderExpanded": "_folder_open"
+  "folderExpanded": "_folder_open",
+
+  "fileExtensions": {
+    "dart": "dart",
+    "sh": "sh",
+    "yaml": "yaml",
+    "kts": "kotlin",
+    "md": "markdown",
+    "json": "json"
+  },
+  "fileNames": {
+    "shorebird.yaml": "shorebird",
+    "firebase.json": "firebase",
+    ".metadata": "flutter",
+    "makefile": "makefile",
+    "pubspec.yaml": "package",
+    ".gitignore": "git",
+    "test": "rootTest",
+    ".vscodeignore": "vscode",
+    ".fvmrc": "fvm",
+    "readme.md": "readme",
+    "settings.json": "settings",
+    "launch.json": "play"
+  },
+  "folderNamesExpanded": {
+    "test": "testFolder",
+    ".vscode": "vscode",
+    ".github": "github",
+    "lib": "dash",
+    ".zed": "zed",
+    "android": "android",
+    "assets": "assets",
+    "ios": "ios",
+    "web": "web",
+    "macos": "macos",
+    "linux": "linux",
+    "windows": "windows",
+    "runner": "xcode"
+  },
+  "folderNames": {
+    "test": "testFolder",
+    ".vscode": "vscode",
+    ".github": "github",
+    "lib": "dash",
+    ".zed": "zed",
+    "android": "android",
+    "assets": "assets",
+    "ios": "ios",
+    "web": "web",
+    "macos": "macos",
+    "linux": "linux",
+    "windows": "windows",
+    "runner": "xcode"
+  }
 }

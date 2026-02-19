@@ -92,6 +92,12 @@
           "description": "Stores the prior icon theme so Flutter Wise can restore it on undo."
         }
       }
+    },
+    "capabilities": {
+      "virtualWorkspaces": true,
+      "untrustedWorkspaces": {
+        "supported": true
+      }
     }
   },
   "scripts": {
