@@ -84,6 +84,12 @@
           "default": "flutter-wise-icons",
           "scope": "resource",
           "description": "Icon theme id to apply on initialization."
+        },
+        "flutterWise.previousIconTheme": {
+          "type": "string",
+          "default": "",
+          "scope": "window",
+          "description": "Stores the prior icon theme so Flutter Wise can restore it on undo."
         }
       }
     }

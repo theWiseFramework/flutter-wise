@@ -46,7 +46,7 @@ export function registerUndoWorkspaceInit(): vscode.Disposable {
       removeGlobs: appliedSearch,
     });
 
-    // Reset Flutter Wise state
+    // Reset Flutter Wise state (folder-scoped settings)
     await cfg.update(
       "initialized",
       false,
@@ -67,6 +67,27 @@ export function registerUndoWorkspaceInit(): vscode.Disposable {
       "setContext",
       "flutterWise.initialized",
       false,
+    );
+
+    // --- Restore icon theme (workspace scope) ---
+    const cfgWs = vscode.workspace.getConfiguration("flutterWise");
+    const prevIconTheme = cfgWs.get<string>("previousIconTheme", "") ?? "";
+
+    const wb = vscode.workspace.getConfiguration("workbench");
+    const currentIconTheme = wb.get<string>("iconTheme") ?? "";
+
+    if (currentIconTheme === "flutter-wise-icons") {
+      await wb.update(
+        "iconTheme",
+        prevIconTheme || undefined,
+        vscode.ConfigurationTarget.Workspace,
+      );
+    }
+
+    await cfgWs.update(
+      "previousIconTheme",
+      "",
+      vscode.ConfigurationTarget.Workspace,
     );
 
     vscode.window.showInformationMessage(

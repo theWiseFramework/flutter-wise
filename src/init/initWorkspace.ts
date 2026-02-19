@@ -108,7 +108,16 @@ export function registerInitWorkspace(): vscode.Disposable {
       cfg.get<string>("preferredIconThemeId", "flutter-wise-icons") ??
       "flutter-wise-icons";
 
-    const wb = vscode.workspace.getConfiguration("workbench", folder.uri);
+    const wb = vscode.workspace.getConfiguration("workbench");
+    const currentIconTheme = wb.get<string>("iconTheme") ?? "";
+
+    // store previous theme at WORKSPACE scope (not folder)
+    const cfgWs = vscode.workspace.getConfiguration("flutterWise");
+    await cfgWs.update(
+      "previousIconTheme",
+      currentIconTheme,
+      vscode.ConfigurationTarget.Workspace,
+    );
 
     // Apply icon theme if enabled and not already set to ours
     if (useIconTheme) {
@@ -117,7 +126,7 @@ export function registerInitWorkspace(): vscode.Disposable {
         await wb.update(
           "iconTheme",
           preferredIconThemeId,
-          vscode.ConfigurationTarget.WorkspaceFolder,
+          vscode.ConfigurationTarget.Workspace,
         );
       }
     }
