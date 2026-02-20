@@ -11,6 +11,7 @@
     "kotlin": { "iconPath": "../assets/icons/file_type_kotlin.svg" },
     "json": { "iconPath": "../assets/icons/file_type_json.svg" },
     "image": { "iconPath": "../assets/icons/file_type_image.svg" },
+    "html": { "iconPath": "../assets/icons/file_type_html.svg" },
 
     "shorebird": { "iconPath": "../assets/icons/file_type_shorebird.svg" },
     "firebase": { "iconPath": "../assets/icons/file_type_firebase.svg" },
@@ -45,7 +46,14 @@
     "router": { "iconPath": "../assets/icons/file_type_router.svg" },
     "main": { "iconPath": "../assets/icons/file_type_main.svg" },
     "config": { "iconPath": "../assets/icons/folder_type_config.svg" },
-    "modules": { "iconPath": "../assets/icons/folder_type_modules.png" }
+    "modules": { "iconPath": "../assets/icons/folder_type_modules.png" },
+    "components": { "iconPath": "../assets/icons/folder_type_components.png" },
+    "utils": { "iconPath": "../assets/icons/folder_type_utils.png" },
+    "models": { "iconPath": "../assets/icons/folder_type_models.png" },
+    "controllers": {
+      "iconPath": "../assets/icons/folder_type_controllers.png"
+    },
+    "view": { "iconPath": "../assets/icons/folder_type_view.png" }
   },
 
   "file": "_file",
@@ -59,7 +67,8 @@
     "kts": "kotlin",
     "md": "markdown",
     "json": "json",
-    "png": "image"
+    "png": "image",
+    "html": "html"
   },
   "fileNames": {
     "shorebird.yaml": "shorebird",
@@ -97,7 +106,13 @@
     "img": "folder_type_flutter_opened",
     "config": "config",
     "firebase": "firebase",
-    "modules": "modules"
+    "modules": "modules",
+    "components": "components",
+    "utils": "utils",
+    "models": "models",
+    "model": "models",
+    "controllers": "controllers",
+    "view": "view"
   },
   "folderNames": {
     "test": "testFolder",
@@ -118,6 +133,12 @@
     "img": "images_folder",
     "config": "config",
     "firebase": "firebase",
-    "modules": "modules"
+    "modules": "modules",
+    "components": "components",
+    "utils": "utils",
+    "models": "models",
+    "model": "models",
+    "controllers": "controllers",
+    "view": "view"
   }
 }
