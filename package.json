@@ -3,11 +3,20 @@
   "displayName": "Flutter Wise",
   "description": "Tools to make vscode a full flutter ide",
   "version": "0.0.1",
+  "publisher": "wiseframework",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/theWiseFramework/flutter-wise"
+  },
   "engines": {
     "vscode": "^1.109.0"
   },
   "categories": [
     "Other"
+  ],
+  "keywords": [
+    "theme",
+    "flutter"
   ],
   "activationEvents": [
     "onCommand:flutterWise.initWorkspace",
@@ -38,8 +47,21 @@
       {
         "command": "flutterWise.undoWorkspaceInit",
         "title": "Flutter Wise: Undo Workspace Setup"
+      },
+      {
+        "command": "flutterWise.createModule",
+        "title": "Flutter Wise: Create Flutter Module"
       }
     ],
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "flutterWise.createModule",
+          "group": "flutterWise@1",
+          "when": "explorerResourceIsFolder && resourceFilename == modules"
+        }
+      ]
+    },
     "configuration": {
       "title": "Flutter Wise",
       "properties": {

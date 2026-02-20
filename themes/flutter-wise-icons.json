@@ -116,6 +116,7 @@
     "models": "models",
     "model": "models",
     "controllers": "controllers",
+    "controller": "controllers",
     "view": "view",
     "pages": "pages",
     "widgets": "widgets"
@@ -145,6 +146,7 @@
     "models": "models",
     "model": "models",
     "controllers": "controllers",
+    "controller": "controllers",
     "view": "view",
     "pages": "pages",
     "widgets": "widgets"
