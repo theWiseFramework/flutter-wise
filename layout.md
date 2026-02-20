@@ -56,3 +56,10 @@ flutter/
    ├─ flutter-light.json
    ├─ flutter-dark.json            # optional
    └─ flutter-icon-theme.json
+
+
+
+
+   adb
+   echo 'export ANDROID_HOME=$HOME/Library/Android/sdk' >> ~/.zshrc
+echo 'export PATH=$PATH:$ANDROID_HOME/platform-tools' >> ~/.zshrc

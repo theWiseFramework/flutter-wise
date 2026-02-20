@@ -20,7 +20,9 @@
   ],
   "activationEvents": [
     "onCommand:flutterWise.initWorkspace",
-    "onCommand:flutterWise.undoWorkspaceInit"
+    "onCommand:flutterWise.undoWorkspaceInit",
+    "onView:flutterWiseDevicesView",
+    "onView:flutterWiseToolsView"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -51,6 +53,26 @@
       {
         "command": "flutterWise.createModule",
         "title": "Flutter Wise: Create Flutter Module"
+      },
+      {
+        "command": "flutterWise.devices.refresh",
+        "title": "Flutter Wise: Refresh Devices"
+      },
+      {
+        "command": "flutterWise.devices.connect",
+        "title": "Flutter Wise: Connect Device"
+      },
+      {
+        "command": "flutterWise.devices.connect.ip",
+        "title": "Flutter Wise: Connect Device by IP"
+      },
+      {
+        "command": "flutterWise.devices.connect.qr",
+        "title": "Flutter Wise: Connect Device by QR"
+      },
+      {
+        "command": "flutterWise.devices.connect.pair",
+        "title": "Flutter Wise: Connect Device by Pairing Code"
       }
     ],
     "menus": {
