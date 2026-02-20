@@ -115,6 +115,27 @@
         }
       }
     },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "flutterWiseContainer",
+          "title": "Flutter Wise",
+          "icon": "assets/product/simple-logo.svg"
+        }
+      ]
+    },
+    "views": {
+      "flutterWiseContainer": [
+        {
+          "id": "flutterWiseAvdView",
+          "name": "AVD / Devices"
+        },
+        {
+          "id": "flutterWiseToolsView",
+          "name": "Shortcuts"
+        }
+      ]
+    },
     "capabilities": {
       "virtualWorkspaces": true,
       "untrustedWorkspaces": {

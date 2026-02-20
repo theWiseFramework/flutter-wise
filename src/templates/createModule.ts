@@ -176,6 +176,32 @@ export 'routes.dart';
       Buffer.from(content, "utf8"),
     );
 
+    const modulesBarrelFile = vscode.Uri.joinPath(targetUri, "modules.dart");
+    const exportLine = `export '${name}/${name}.dart';`;
+    let modulesBarrelContent = "";
+
+    try {
+      const existing = await vscode.workspace.fs.readFile(modulesBarrelFile);
+      modulesBarrelContent = Buffer.from(existing).toString("utf8");
+    } catch {
+      modulesBarrelContent = "";
+    }
+
+    const hasExport = modulesBarrelContent
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .includes(exportLine);
+
+    if (!hasExport) {
+      const nextContent = modulesBarrelContent.trim().length
+        ? `${modulesBarrelContent.replace(/\s*$/, "\n")}${exportLine}\n`
+        : `${exportLine}\n`;
+      await vscode.workspace.fs.writeFile(
+        modulesBarrelFile,
+        Buffer.from(nextContent, "utf8"),
+      );
+    }
+
     vscode.window.showInformationMessage(`Module created: lib/modules/${name}`);
   });
 }
