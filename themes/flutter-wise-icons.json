@@ -10,6 +10,7 @@
     "yaml": { "iconPath": "../assets/icons/file_type_yaml.svg" },
     "kotlin": { "iconPath": "../assets/icons/file_type_kotlin.svg" },
     "json": { "iconPath": "../assets/icons/file_type_json.svg" },
+    "image": { "iconPath": "../assets/icons/file_type_image.svg" },
 
     "shorebird": { "iconPath": "../assets/icons/file_type_shorebird.svg" },
     "firebase": { "iconPath": "../assets/icons/file_type_firebase.svg" },
@@ -24,7 +25,7 @@
     "android": { "iconPath": "../assets/icons/file_type_android.svg" },
     "assets": { "iconPath": "../assets/icons/file_type_assets.png" },
     "ios": { "iconPath": "../assets/icons/file_type_ios.svg" },
-    "web": { "iconPath": "../assets/icons/file_type_web.svg" },
+    "web": { "iconPath": "../assets/icons/folder_type_web.svg" },
     "fvm": { "iconPath": "../assets/icons/file_type_fvm.png" },
     "macos": { "iconPath": "../assets/icons/folder_type_macos.svg" },
     "linux": { "iconPath": "../assets/icons/folder_type_linux.svg" },
@@ -33,7 +34,18 @@
     "package": { "iconPath": "../assets/icons/file_type_package.svg" },
     "settings": { "iconPath": "../assets/icons/file_type_settings.svg" },
     "play": { "iconPath": "../assets/icons/file_type_play.svg" },
-    "xcode": { "iconPath": "../assets/icons/folder_type_xcode.svg" }
+    "xcode": { "iconPath": "../assets/icons/folder_type_xcode.svg" },
+    "flutter_folder": { "iconPath": "../assets/icons/folder_type_flutter.svg" },
+    "flutter_folder_opened": {
+      "iconPath": "../assets/icons/folder_type_flutter_opened.svg"
+    },
+    "images_folder": {
+      "iconPath": "../assets/icons/folder_type_images.svg"
+    },
+    "router": { "iconPath": "../assets/icons/file_type_router.svg" },
+    "main": { "iconPath": "../assets/icons/file_type_main.svg" },
+    "config": { "iconPath": "../assets/icons/folder_type_config.svg" },
+    "modules": { "iconPath": "../assets/icons/folder_type_modules.png" }
   },
 
   "file": "_file",
@@ -46,7 +58,8 @@
     "yaml": "yaml",
     "kts": "kotlin",
     "md": "markdown",
-    "json": "json"
+    "json": "json",
+    "png": "image"
   },
   "fileNames": {
     "shorebird.yaml": "shorebird",
@@ -60,7 +73,10 @@
     ".fvmrc": "fvm",
     "readme.md": "readme",
     "settings.json": "settings",
-    "launch.json": "play"
+    "launch.json": "play",
+    "router.dart": "router",
+    "routes.dart": "router",
+    "main.dart": "main"
   },
   "folderNamesExpanded": {
     "test": "testFolder",
@@ -75,7 +91,13 @@
     "macos": "macos",
     "linux": "linux",
     "windows": "windows",
-    "runner": "xcode"
+    "runner": "xcode",
+    "flutter": "flutter_folder_opened",
+    "images": "folder_type_flutter_opened",
+    "img": "folder_type_flutter_opened",
+    "config": "config",
+    "firebase": "firebase",
+    "modules": "modules"
   },
   "folderNames": {
     "test": "testFolder",
@@ -90,6 +112,12 @@
     "macos": "macos",
     "linux": "linux",
     "windows": "windows",
-    "runner": "xcode"
+    "runner": "xcode",
+    "flutter": "flutter_folder",
+    "images": "images_folder",
+    "img": "images_folder",
+    "config": "config",
+    "firebase": "firebase",
+    "modules": "modules"
   }
 }
