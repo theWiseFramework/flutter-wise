@@ -1,7 +1,16 @@
 import * as vscode from "vscode";
 import * as path from "path";
+import { getPubspecPackageName } from "../core/pubspec";
 
 const CMD = "flutterWise.createModule";
+
+function toPascalCase(value: string): string {
+  return value
+    .split("_")
+    .filter(Boolean)
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join("");
+}
 
 export function registerCreateModule(): vscode.Disposable {
   return vscode.commands.registerCommand(CMD, async (uri?: vscode.Uri) => {
@@ -59,6 +68,7 @@ export function registerCreateModule(): vscode.Disposable {
       return;
     }
 
+    const packageName = (await getPubspecPackageName(folder.uri)) ?? "app";
     const moduleDir = vscode.Uri.joinPath(targetUri, name);
 
     // Create basic module structure (you can expand to MVC later)
@@ -69,21 +79,100 @@ export function registerCreateModule(): vscode.Disposable {
     await vscode.workspace.fs.createDirectory(
       vscode.Uri.joinPath(moduleDir, "controller"),
     );
+    const viewDir = vscode.Uri.joinPath(moduleDir, "view");
+    await vscode.workspace.fs.createDirectory(viewDir);
     await vscode.workspace.fs.createDirectory(
-      vscode.Uri.joinPath(moduleDir, "view"),
+      vscode.Uri.joinPath(viewDir, "pages"),
+    );
+    await vscode.workspace.fs.createDirectory(
+      vscode.Uri.joinPath(viewDir, "widgets"),
+    );
+
+    const modelName = `${toPascalCase(name)}Model`;
+    const controllerName = `${toPascalCase(name)}Controller`;
+
+    const modelFile = vscode.Uri.joinPath(moduleDir, "model", `${name}_model.dart`);
+    const modelContent = `class ${modelName} {
+  final String title;
+
+  const ${modelName}({required this.title});
+}
+`;
+    await vscode.workspace.fs.writeFile(
+      modelFile,
+      Buffer.from(modelContent, "utf8"),
+    );
+
+    const controllerFile = vscode.Uri.joinPath(
+      moduleDir,
+      "controller",
+      `${name}_ctrl.dart`,
+    );
+    const controllerContent = `import '../model/${name}_model.dart';
+
+class ${controllerName} {
+  ${modelName} get initialData => const ${modelName}(title: '${toPascalCase(name)}');
+}
+`;
+    await vscode.workspace.fs.writeFile(
+      controllerFile,
+      Buffer.from(controllerContent, "utf8"),
+    );
+
+    const routesFile = vscode.Uri.joinPath(moduleDir, "routes.dart");
+    const pageName = `${toPascalCase(name)}Page`;
+    const routesContent = `import 'package:${packageName}/common.dart';
+
+GoRoute ${name}Routes([GlobalKey<NavigatorState>? parentNavigatorKey]) {
+  return GoRoute(
+    path: ${pageName}.path,
+    builder: (context, state) {
+      return const ${pageName}();
+    },
+    routes: [
+   
+    ],
+  );
+}
+`;
+    await vscode.workspace.fs.writeFile(
+      routesFile,
+      Buffer.from(routesContent, "utf8"),
+    );
+
+    const pageFile = vscode.Uri.joinPath(viewDir, "pages", `${name}_page.dart`);
+    const pageContent = `import 'package:${packageName}/common.dart';
+
+class ${pageName} extends StatelessWidget {
+  static const path = '/${name}';
+
+  const ${pageName}({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      body: Center(
+        child: Text('${pageName}'),
+      ),
+    );
+  }
+}
+`;
+    await vscode.workspace.fs.writeFile(
+      pageFile,
+      Buffer.from(pageContent, "utf8"),
     );
 
     // Example entry file
     const indexFile = vscode.Uri.joinPath(moduleDir, `${name}.dart`);
-    const content = `// ${name} module\n\nlibrary ${name};\n`;
+    const content = `
+export 'model/${name}_model.dart';
+export 'controller/${name}_ctrl.dart';
+export 'view/pages/${name}_page.dart';
+export 'routes.dart';
+`;
     await vscode.workspace.fs.writeFile(
       indexFile,
-      Buffer.from(content, "utf8"),
-    );
-
-    const routesFile = vscode.Uri.joinPath(moduleDir, "routes.dart");
-    await vscode.workspace.fs.writeFile(
-      routesFile,
       Buffer.from(content, "utf8"),
     );
 
