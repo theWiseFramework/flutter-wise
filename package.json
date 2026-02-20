@@ -2,8 +2,9 @@
   "name": "flutter-wise",
   "displayName": "Flutter Wise",
   "description": "Tools to make vscode a full flutter ide",
-  "version": "0.0.1",
+  "version": "0.0.3",
   "publisher": "wiseframework",
+  "icon": "assets/product/logo.png",
   "repository": {
     "type": "git",
     "url": "https://github.com/theWiseFramework/flutter-wise"
