@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { randomBytes } from "node:crypto";
 import { commandExists, execCmd, showToolMissing } from "../core/exec";
 import { resolveAdbPath } from "../core/adbPath";
 
@@ -20,6 +21,12 @@ type AdbDevice = {
   details?: string;
 };
 
+type MdnsService = {
+  instance: string;
+  serviceType: string;
+  endpoint: string;
+};
+
 const CMD_REFRESH = "flutterWise.devices.refresh";
 const CMD_CONNECT = "flutterWise.devices.connect";
 const CMD_CONNECT_IP = "flutterWise.devices.connect.ip";
@@ -27,6 +34,11 @@ const CMD_CONNECT_QR = "flutterWise.devices.connect.qr";
 const CMD_CONNECT_PAIR = "flutterWise.devices.connect.pair";
 
 type ConnectMethod = "ip" | "qr" | "pair";
+
+const ADB_TLS_PAIRING_SERVICE = "_adb-tls-pairing._tcp";
+const ADB_TLS_CONNECT_SERVICE = "_adb-tls-connect._tcp";
+const QR_SCAN_TIMEOUT_MS = 90_000;
+const CONNECT_DISCOVERY_TIMEOUT_MS = 20_000;
 
 export class FlutterWiseDevicesProvider implements vscode.TreeDataProvider<Node> {
   private _onDidChangeTreeData = new vscode.EventEmitter<Node | undefined>();
@@ -81,7 +93,7 @@ export class FlutterWiseDevicesProvider implements vscode.TreeDataProvider<Node>
         },
         {
           label: "Connect by QR code",
-          description: "Paste the Wireless debugging QR payload",
+          description: "Show QR code for Android Wireless debugging",
           method: "qr",
         },
         {
@@ -105,7 +117,7 @@ export class FlutterWiseDevicesProvider implements vscode.TreeDataProvider<Node>
         await this.connectByIpAddress();
         break;
       case "qr":
-        await this.connectByQrPayload();
+        await this.connectByQrCode();
         break;
       case "pair":
         await this.connectByPairingCode();
@@ -213,44 +225,56 @@ export class FlutterWiseDevicesProvider implements vscode.TreeDataProvider<Node>
     await this.runAdbConnect(connectEndpoint.trim());
   }
 
-  async connectByQrPayload(): Promise<void> {
+  async connectByQrCode(): Promise<void> {
     if (!(await this.ensureAdbReady(true))) {
       return;
     }
 
-    const payload = await vscode.window.showInputBox({
-      title: "Connect by QR Code",
-      prompt:
-        "Paste QR payload (example: WIFI:T:ADB;S:192.168.1.17:42115;P:123456;;)",
-      validateInput: (value) => {
-        if (!value.trim()) {
-          return "QR payload is required";
-        }
-        const parsed = this.parseQrPayload(value);
-        if (!parsed) {
-          return "Invalid QR payload format";
-        }
-        return null;
-      },
-    });
-    if (!payload) {
-      return;
-    }
+    const adb = await resolveAdbPath();
+    const pairServiceName = `studio-${this.randomFromAlphabet(8, "abcdefghijklmnopqrstuvwxyz0123456789")}`;
+    const pairCode = this.randomFromAlphabet(12, "ABCDEFGHJKLMNPQRSTUVWXYZ23456789");
+    const payload = `WIFI:T:ADB;S:${pairServiceName};P:${pairCode};;`;
+    this.showQrPairingPanel(payload, pairServiceName, pairCode);
 
-    const parsed = this.parseQrPayload(payload);
-    if (!parsed) {
-      vscode.window.showErrorMessage(
-        "Unable to parse QR payload. Use format WIFI:T:ADB;S:<host:port>;P:<code>;;",
+    const knownConnectEndpoints = new Set(
+      (await this.listMdnsServices(adb!))
+        .filter((service) =>
+          service.serviceType.includes(ADB_TLS_CONNECT_SERVICE),
+        )
+        .map((service) => service.endpoint),
+    );
+
+    const pairingEndpoint = await vscode.window.withProgress<string | undefined>(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: "Flutter Wise: Waiting for QR scan",
+        cancellable: true,
+      },
+      async (progress, token) => {
+        progress.report({
+          message:
+            "Scan the QR code from Android Wireless debugging to start pairing.",
+        });
+        return this.waitForPairingEndpoint(
+          adb!,
+          pairServiceName,
+          QR_SCAN_TIMEOUT_MS,
+          token,
+          progress,
+        );
+      },
+    );
+    if (!pairingEndpoint) {
+      vscode.window.showWarningMessage(
+        "QR pairing timed out. Scan the QR code again and retry.",
       );
       return;
     }
 
-    const adb = await resolveAdbPath();
-
     const pairResult = await execCmd(adb!, [
       "pair",
-      parsed.pairEndpoint,
-      parsed.pairCode,
+      pairingEndpoint,
+      pairCode,
     ]);
     if (pairResult.code !== 0) {
       const reason =
@@ -265,7 +289,22 @@ export class FlutterWiseDevicesProvider implements vscode.TreeDataProvider<Node>
     const pairOutput =
       this.cleanOutput(pairResult.stdout) || "Pairing succeeded.";
     vscode.window.showInformationMessage(pairOutput);
-    await this.runAdbConnect(parsed.connectEndpoint);
+
+    const connectEndpoint = await this.waitForConnectEndpoint(
+      adb!,
+      knownConnectEndpoints,
+      CONNECT_DISCOVERY_TIMEOUT_MS,
+    );
+    if (!connectEndpoint) {
+      vscode.window.showInformationMessage(
+        "Device paired. If it is not connected yet, tap Refresh or use Connect by IP.",
+      );
+      this.refresh();
+      return;
+    }
+
+    await this.runAdbConnect(connectEndpoint);
+    this.refresh();
   }
 
   private async buildRootNodes(): Promise<Node[]> {
@@ -293,7 +332,6 @@ export class FlutterWiseDevicesProvider implements vscode.TreeDataProvider<Node>
     const devicesResult = await execCmd(adb!, ["devices", "-l"]);
     const adbOk = startServer.code === 0 && devicesResult.code === 0;
     const devices = adbOk ? this.parseAdbDevices(devicesResult.stdout) : [];
-    console.log("ADB State :", devices);
 
     return [
       {
@@ -433,27 +471,271 @@ export class FlutterWiseDevicesProvider implements vscode.TreeDataProvider<Node>
     return devices;
   }
 
-  private parseQrPayload(
-    raw: string,
-  ):
-    | { pairEndpoint: string; pairCode: string; connectEndpoint: string }
-    | undefined {
-    const value = raw.trim();
-    const serviceMatch = value.match(/(?:^|;)S:([^;]+)(?:;|$)/i);
-    const codeMatch = value.match(/(?:^|;)P:([^;]+)(?:;|$)/i);
-    if (!serviceMatch || !codeMatch) {
-      return undefined;
+  private async waitForPairingEndpoint(
+    adb: string,
+    pairServiceName: string,
+    timeoutMs: number,
+    token: vscode.CancellationToken,
+    progress: vscode.Progress<{ message?: string; increment?: number }>,
+  ): Promise<string | undefined> {
+    const startedAt = Date.now();
+    let lastProgress = 0;
+
+    while (Date.now() - startedAt < timeoutMs) {
+      if (token.isCancellationRequested) {
+        return undefined;
+      }
+
+      const elapsed = Date.now() - startedAt;
+      const percent = Math.min(99, Math.floor((elapsed / timeoutMs) * 100));
+      if (percent > lastProgress) {
+        progress.report({
+          increment: percent - lastProgress,
+          message: `Waiting for phone scan... ${Math.ceil((timeoutMs - elapsed) / 1000)}s`,
+        });
+        lastProgress = percent;
+      }
+
+      const services = await this.listMdnsServices(adb);
+      const pairingService = services.find(
+        (service) =>
+          service.instance === pairServiceName &&
+          service.serviceType.includes(ADB_TLS_PAIRING_SERVICE),
+      );
+      if (pairingService) {
+        return pairingService.endpoint;
+      }
+
+      await this.sleep(1000);
     }
 
-    const pairEndpoint = serviceMatch[1].trim();
-    const pairCode = codeMatch[1].trim();
-    if (!pairEndpoint || !pairCode) {
-      return undefined;
+    return undefined;
+  }
+
+  private async waitForConnectEndpoint(
+    adb: string,
+    knownConnectEndpoints: Set<string>,
+    timeoutMs: number,
+  ): Promise<string | undefined> {
+    const startedAt = Date.now();
+
+    while (Date.now() - startedAt < timeoutMs) {
+      const services = await this.listMdnsServices(adb);
+      const connectServices = services.filter((service) =>
+        service.serviceType.includes(ADB_TLS_CONNECT_SERVICE),
+      );
+
+      const fresh = connectServices.find(
+        (service) => !knownConnectEndpoints.has(service.endpoint),
+      );
+      if (fresh) {
+        return fresh.endpoint;
+      }
+
+      await this.sleep(1000);
     }
 
-    const host = pairEndpoint.split(":")[0];
-    const connectEndpoint = host ? `${host}:5555` : pairEndpoint;
-    return { pairEndpoint, pairCode, connectEndpoint };
+    const finalServices = await this.listMdnsServices(adb);
+    const finalConnectServices = finalServices.filter((service) =>
+      service.serviceType.includes(ADB_TLS_CONNECT_SERVICE),
+    );
+    if (finalConnectServices.length === 1) {
+      return finalConnectServices[0].endpoint;
+    }
+
+    return undefined;
+  }
+
+  private async listMdnsServices(adb: string): Promise<MdnsService[]> {
+    const result = await execCmd(adb, ["mdns", "services"]);
+    if (result.code !== 0) {
+      return [];
+    }
+
+    return this.parseMdnsServices(result.stdout);
+  }
+
+  private parseMdnsServices(stdout: string): MdnsService[] {
+    const services: MdnsService[] = [];
+
+    for (const rawLine of stdout.split(/\r?\n/)) {
+      const line = rawLine.trim();
+      if (!line) {
+        continue;
+      }
+
+      const parts = line.split(/\s+/);
+      if (parts.length < 3) {
+        continue;
+      }
+
+      const [instance, serviceType, endpoint] = parts;
+      if (!instance || !serviceType || !endpoint) {
+        continue;
+      }
+
+      services.push({ instance, serviceType, endpoint });
+    }
+
+    return services;
+  }
+
+  private showQrPairingPanel(
+    payload: string,
+    pairServiceName: string,
+    pairCode: string,
+  ): void {
+    const panel = vscode.window.createWebviewPanel(
+      "flutterWiseQrPairing",
+      "Flutter Wise: Scan QR to Pair",
+      vscode.ViewColumn.Active,
+      {
+        enableScripts: true,
+        retainContextWhenHidden: true,
+      },
+    );
+
+    panel.webview.html = this.getQrPairingHtml(payload, pairServiceName, pairCode);
+  }
+
+  private getQrPairingHtml(
+    payload: string,
+    pairServiceName: string,
+    pairCode: string,
+  ): string {
+    const nonce = this.createNonce();
+    const escapedPayload = this.escapeHtml(payload);
+    const escapedPairService = this.escapeHtml(pairServiceName);
+    const escapedPairCode = this.escapeHtml(pairCode);
+
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta
+    http-equiv="Content-Security-Policy"
+    content="default-src 'none'; img-src data:; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}' https://unpkg.com;"
+  />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pair Device with QR</title>
+  <style nonce="${nonce}">
+    :root {
+      color-scheme: light dark;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    body {
+      margin: 0;
+      padding: 20px;
+      display: grid;
+      gap: 14px;
+      justify-items: center;
+    }
+    #qrcode {
+      width: 288px;
+      min-height: 288px;
+      background: white;
+      border-radius: 12px;
+      display: grid;
+      place-items: center;
+      padding: 14px;
+      box-sizing: border-box;
+    }
+    #status {
+      margin: 0;
+      text-align: center;
+      opacity: 0.9;
+    }
+    .meta {
+      width: min(560px, 100%);
+      border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
+      border-radius: 10px;
+      padding: 12px;
+      box-sizing: border-box;
+      display: grid;
+      gap: 8px;
+    }
+    .label {
+      opacity: 0.75;
+      font-size: 12px;
+    }
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12px;
+      word-break: break-all;
+      user-select: all;
+    }
+  </style>
+</head>
+<body>
+  <h2>Scan To Pair Device</h2>
+  <div id="qrcode"></div>
+  <p id="status">Preparing QR code...</p>
+  <div class="meta">
+    <div><span class="label">Service Name:</span> <code>${escapedPairService}</code></div>
+    <div><span class="label">Pairing Code:</span> <code>${escapedPairCode}</code></div>
+    <div><span class="label">QR Payload:</span> <code>${escapedPayload}</code></div>
+  </div>
+  <script nonce="${nonce}" src="https://unpkg.com/qrcodejs@1.0.0/qrcode.min.js"></script>
+  <script nonce="${nonce}">
+    const payload = ${JSON.stringify(payload)};
+    const root = document.getElementById("qrcode");
+    const status = document.getElementById("status");
+
+    function setMessage(text) {
+      if (status) {
+        status.textContent = text;
+      }
+    }
+
+    try {
+      if (!window.QRCode) {
+        throw new Error("QRCode library unavailable");
+      }
+
+      new window.QRCode(root, {
+        text: payload,
+        width: 260,
+        height: 260,
+        correctLevel: window.QRCode.CorrectLevel.M,
+      });
+      setMessage("Open Android Wireless debugging and scan this QR code.");
+    } catch (error) {
+      if (root) {
+        root.innerHTML = "<strong>QR generation failed.</strong>";
+      }
+      setMessage("QR code could not be rendered. Use pairing code connection.");
+    }
+  </script>
+</body>
+</html>`;
+  }
+
+  private randomFromAlphabet(length: number, alphabet: string): string {
+    const bytes = randomBytes(length);
+    let result = "";
+
+    for (let i = 0; i < length; i += 1) {
+      result += alphabet[bytes[i] % alphabet.length];
+    }
+
+    return result;
+  }
+
+  private createNonce(): string {
+    return randomBytes(16).toString("base64");
+  }
+
+  private escapeHtml(value: string): string {
+    return value
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  private sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   private async ensureAdbReady(showErrors: boolean): Promise<boolean> {
@@ -514,7 +796,7 @@ export function registerDevicesCommands(
       provider.connectByIpAddress(),
     ),
     vscode.commands.registerCommand(CMD_CONNECT_QR, () =>
-      provider.connectByQrPayload(),
+      provider.connectByQrCode(),
     ),
     vscode.commands.registerCommand(CMD_CONNECT_PAIR, () =>
       provider.connectByPairingCode(),
