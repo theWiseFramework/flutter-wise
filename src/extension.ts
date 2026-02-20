@@ -3,7 +3,7 @@ import { registerInitWorkspace } from "./init/initWorkspace";
 import { registerUndoWorkspaceInit } from "./init/undoWorkspaceInit";
 import { registerCreateModule } from "./templates/createModule";
 import { FlutterWiseToolsProvider } from "./sidebar/toolsView";
-import { FlutterWiseAvdProvider } from "./sidebar/avdView";
+import { FlutterWiseDevicesProvider } from "./sidebar/devicesView";
 
 export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(registerInitWorkspace());
@@ -11,9 +11,9 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(registerCreateModule());
 
   // AVD
-  const avdProvider = new FlutterWiseAvdProvider();
+  const avdProvider = new FlutterWiseDevicesProvider();
   context.subscriptions.push(
-    vscode.window.registerTreeDataProvider("flutterWiseAvdView", avdProvider),
+    vscode.window.registerTreeDataProvider("flutterWiseDevicesView", avdProvider),
   );
 
   context.subscriptions.push(

@@ -12,7 +12,7 @@ type Node =
       contextValue?: string;
     };
 
-export class FlutterWiseAvdProvider implements vscode.TreeDataProvider<Node> {
+export class FlutterWiseDevicesProvider implements vscode.TreeDataProvider<Node> {
   getTreeItem(element: Node): vscode.TreeItem | Thenable<vscode.TreeItem> {
       throw new Error("Method not implemented.");
   }

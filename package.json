@@ -127,8 +127,8 @@
     "views": {
       "flutterWiseContainer": [
         {
-          "id": "flutterWiseAvdView",
-          "name": "AVD / Devices"
+          "id": "flutterWiseDevicesView",
+          "name": "Devices"
         },
         {
           "id": "flutterWiseToolsView",
