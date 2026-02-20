@@ -53,7 +53,10 @@
     "controllers": {
       "iconPath": "../assets/icons/folder_type_controllers.png"
     },
-    "view": { "iconPath": "../assets/icons/folder_type_view.png" }
+    "view": { "iconPath": "../assets/icons/folder_type_view.png" },
+    "common": { "iconPath": "../assets/icons/file_type_common.svg" },
+    "pages": { "iconPath": "../assets/icons/folder_type_pages.png" },
+    "widgets": { "iconPath": "../assets/icons/folder_type_widgets.png" }
   },
 
   "file": "_file",
@@ -85,7 +88,8 @@
     "launch.json": "play",
     "router.dart": "router",
     "routes.dart": "router",
-    "main.dart": "main"
+    "main.dart": "main",
+    "common.dart": "common"
   },
   "folderNamesExpanded": {
     "test": "testFolder",
@@ -112,7 +116,9 @@
     "models": "models",
     "model": "models",
     "controllers": "controllers",
-    "view": "view"
+    "view": "view",
+    "pages": "pages",
+    "widgets": "widgets"
   },
   "folderNames": {
     "test": "testFolder",
@@ -139,6 +145,8 @@
     "models": "models",
     "model": "models",
     "controllers": "controllers",
-    "view": "view"
+    "view": "view",
+    "pages": "pages",
+    "widgets": "widgets"
   }
 }
