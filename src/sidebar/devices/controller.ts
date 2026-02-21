@@ -2,10 +2,10 @@ import { randomBytes } from "node:crypto";
 import * as vscode from "vscode";
 import { resolveAdbPath } from "../../core/adbPath";
 import { commandExists, execCmd, showToolMissing } from "../../core/exec";
-import { createNonce, escapeHtml } from "../shared/webview";
 import type {
   AdbDevice,
   ConnectMethod,
+  DevicesQrPairingState,
   DevicesViewItem,
   DevicesViewModel,
   MdnsService,
@@ -16,12 +16,27 @@ const ADB_TLS_CONNECT_SERVICE = "_adb-tls-connect._tcp";
 const QR_SCAN_TIMEOUT_MS = 90_000;
 const CONNECT_DISCOVERY_TIMEOUT_MS = 20_000;
 
+type QrPairingSession = {
+  cancelled: boolean;
+};
+
 export class FlutterWiseDevicesController {
   private readonly onDidChangeEmitter = new vscode.EventEmitter<void>();
   readonly onDidChange = this.onDidChangeEmitter.event;
 
+  private qrPairing?: DevicesQrPairingState;
+  private qrSession?: QrPairingSession;
+
   refresh(): void {
     this.onDidChangeEmitter.fire();
+  }
+
+  cancelQrPairing(): void {
+    if (this.qrSession) {
+      this.qrSession.cancelled = true;
+    }
+
+    this.clearQrPairingState();
   }
 
   async getViewModel(): Promise<DevicesViewModel> {
@@ -126,6 +141,7 @@ export class FlutterWiseDevicesController {
           ],
         },
       ],
+      qrPairing: this.qrPairing ? { ...this.qrPairing } : undefined,
     };
   }
 
@@ -197,6 +213,7 @@ export class FlutterWiseDevicesController {
         return null;
       },
     });
+
     if (!endpoint) {
       return;
     }
@@ -219,6 +236,7 @@ export class FlutterWiseDevicesController {
         return null;
       },
     });
+
     if (!pairEndpoint) {
       return;
     }
@@ -234,6 +252,7 @@ export class FlutterWiseDevicesController {
         return null;
       },
     });
+
     if (!pairingCode) {
       return;
     }
@@ -283,77 +302,131 @@ export class FlutterWiseDevicesController {
       return;
     }
 
+    if (this.qrSession) {
+      this.cancelQrPairing();
+    }
+
     const adb = (await resolveAdbPath()) ?? "adb";
     const pairServiceName = `studio-${this.randomFromAlphabet(8, "abcdefghijklmnopqrstuvwxyz0123456789")}`;
     const pairCode = this.randomFromAlphabet(12, "ABCDEFGHJKLMNPQRSTUVWXYZ23456789");
     const payload = `WIFI:T:ADB;S:${pairServiceName};P:${pairCode};;`;
 
-    this.showQrPairingPanel(payload, pairServiceName, pairCode);
+    const session: QrPairingSession = { cancelled: false };
+    this.qrSession = session;
+    this.setQrPairingState({
+      payload,
+      pairServiceName,
+      pairCode,
+      statusMessage:
+        "Open Android Wireless debugging and scan this QR code to start pairing.",
+    });
 
-    const knownConnectEndpoints = new Set(
-      (await this.listMdnsServices(adb))
-        .filter((service) => service.serviceType.includes(ADB_TLS_CONNECT_SERVICE))
-        .map((service) => service.endpoint),
-    );
+    try {
+      const knownConnectEndpoints = new Set(
+        (await this.listMdnsServices(adb))
+          .filter((service) => service.serviceType.includes(ADB_TLS_CONNECT_SERVICE))
+          .map((service) => service.endpoint),
+      );
 
-    const pairingEndpoint = await vscode.window.withProgress<string | undefined>(
-      {
-        location: vscode.ProgressLocation.Notification,
-        title: "Flutter Wise: Waiting for QR scan",
-        cancellable: true,
-      },
-      async (progress, token) => {
-        progress.report({
-          message:
-            "Scan the QR code from Android Wireless debugging to start pairing.",
-        });
+      const pairingEndpoint = await this.waitForPairingEndpoint(
+        adb,
+        pairServiceName,
+        QR_SCAN_TIMEOUT_MS,
+        () => !this.isQrSessionActive(session),
+        (remainingSeconds) => {
+          this.updateQrStatus(`Waiting for phone scan... ${remainingSeconds}s`);
+        },
+      );
 
-        return this.waitForPairingEndpoint(
-          adb,
-          pairServiceName,
-          QR_SCAN_TIMEOUT_MS,
-          token,
-          progress,
+      if (!this.isQrSessionActive(session)) {
+        return;
+      }
+
+      if (!pairingEndpoint) {
+        vscode.window.showWarningMessage(
+          "QR pairing timed out. Scan the QR code again and retry.",
         );
-      },
-    );
+        this.clearQrPairingState();
+        return;
+      }
 
-    if (!pairingEndpoint) {
-      vscode.window.showWarningMessage(
-        "QR pairing timed out. Scan the QR code again and retry.",
+      this.updateQrStatus("QR scan detected. Pairing with device...");
+
+      const pairResult = await execCmd(adb, ["pair", pairingEndpoint, pairCode]);
+      if (!this.isQrSessionActive(session)) {
+        return;
+      }
+
+      if (pairResult.code !== 0) {
+        const reason =
+          this.cleanOutput(pairResult.stderr) ||
+          this.cleanOutput(pairResult.stdout);
+        vscode.window.showErrorMessage(
+          `adb pair failed${reason ? `: ${reason}` : ""}`,
+        );
+        this.clearQrPairingState();
+        return;
+      }
+
+      const pairOutput = this.cleanOutput(pairResult.stdout) || "Pairing succeeded.";
+      vscode.window.showInformationMessage(pairOutput);
+
+      this.updateQrStatus("Pairing successful. Waiting for connection endpoint...");
+
+      const connectEndpoint = await this.waitForConnectEndpoint(
+        adb,
+        knownConnectEndpoints,
+        CONNECT_DISCOVERY_TIMEOUT_MS,
+        () => !this.isQrSessionActive(session),
       );
-      return;
-    }
 
-    const pairResult = await execCmd(adb, ["pair", pairingEndpoint, pairCode]);
-    if (pairResult.code !== 0) {
-      const reason =
-        this.cleanOutput(pairResult.stderr) ||
-        this.cleanOutput(pairResult.stdout);
-      vscode.window.showErrorMessage(
-        `adb pair failed${reason ? `: ${reason}` : ""}`,
-      );
-      return;
-    }
+      if (!this.isQrSessionActive(session)) {
+        return;
+      }
 
-    const pairOutput = this.cleanOutput(pairResult.stdout) || "Pairing succeeded.";
-    vscode.window.showInformationMessage(pairOutput);
+      if (!connectEndpoint) {
+        vscode.window.showInformationMessage(
+          "Device paired. If it is not connected yet, tap Refresh or use Connect by IP.",
+        );
+        this.clearQrPairingState();
+        this.refresh();
+        return;
+      }
 
-    const connectEndpoint = await this.waitForConnectEndpoint(
-      adb,
-      knownConnectEndpoints,
-      CONNECT_DISCOVERY_TIMEOUT_MS,
-    );
-
-    if (!connectEndpoint) {
-      vscode.window.showInformationMessage(
-        "Device paired. If it is not connected yet, tap Refresh or use Connect by IP.",
-      );
+      this.updateQrStatus(`Connecting to ${connectEndpoint}...`);
+      await this.runAdbConnect(connectEndpoint);
+      this.clearQrPairingState();
       this.refresh();
+    } finally {
+      if (this.qrSession === session) {
+        this.qrSession = undefined;
+      }
+    }
+  }
+
+  private isQrSessionActive(session: QrPairingSession): boolean {
+    return this.qrSession === session && !session.cancelled;
+  }
+
+  private setQrPairingState(state: DevicesQrPairingState): void {
+    this.qrPairing = state;
+    this.refresh();
+  }
+
+  private updateQrStatus(statusMessage: string): void {
+    if (!this.qrPairing) {
       return;
     }
 
-    await this.runAdbConnect(connectEndpoint);
+    this.qrPairing = {
+      ...this.qrPairing,
+      statusMessage,
+    };
+    this.refresh();
+  }
+
+  private clearQrPairingState(): void {
+    this.qrPairing = undefined;
     this.refresh();
   }
 
@@ -398,26 +471,19 @@ export class FlutterWiseDevicesController {
     adb: string,
     pairServiceName: string,
     timeoutMs: number,
-    token: vscode.CancellationToken,
-    progress: vscode.Progress<{ message?: string; increment?: number }>,
+    isCancelled: () => boolean,
+    onTick: (remainingSeconds: number) => void,
   ): Promise<string | undefined> {
     const startedAt = Date.now();
-    let lastProgress = 0;
 
     while (Date.now() - startedAt < timeoutMs) {
-      if (token.isCancellationRequested) {
+      if (isCancelled()) {
         return undefined;
       }
 
       const elapsed = Date.now() - startedAt;
-      const percent = Math.min(99, Math.floor((elapsed / timeoutMs) * 100));
-      if (percent > lastProgress) {
-        progress.report({
-          increment: percent - lastProgress,
-          message: `Waiting for phone scan... ${Math.ceil((timeoutMs - elapsed) / 1000)}s`,
-        });
-        lastProgress = percent;
-      }
+      const remainingSeconds = Math.ceil((timeoutMs - elapsed) / 1000);
+      onTick(Math.max(0, remainingSeconds));
 
       const services = await this.listMdnsServices(adb);
       const pairingService = services.find(
@@ -440,10 +506,15 @@ export class FlutterWiseDevicesController {
     adb: string,
     knownConnectEndpoints: Set<string>,
     timeoutMs: number,
+    isCancelled: () => boolean,
   ): Promise<string | undefined> {
     const startedAt = Date.now();
 
     while (Date.now() - startedAt < timeoutMs) {
+      if (isCancelled()) {
+        return undefined;
+      }
+
       const services = await this.listMdnsServices(adb);
       const connectServices = services.filter((service) =>
         service.serviceType.includes(ADB_TLS_CONNECT_SERVICE),
@@ -458,6 +529,10 @@ export class FlutterWiseDevicesController {
       }
 
       await this.sleep(1000);
+    }
+
+    if (isCancelled()) {
+      return undefined;
     }
 
     const finalServices = await this.listMdnsServices(adb);
@@ -504,136 +579,6 @@ export class FlutterWiseDevicesController {
     }
 
     return services;
-  }
-
-  private showQrPairingPanel(
-    payload: string,
-    pairServiceName: string,
-    pairCode: string,
-  ): void {
-    const panel = vscode.window.createWebviewPanel(
-      "flutterWiseQrPairing",
-      "Flutter Wise: Scan QR to Pair",
-      vscode.ViewColumn.Active,
-      {
-        enableScripts: true,
-        retainContextWhenHidden: true,
-      },
-    );
-
-    panel.webview.html = this.getQrPairingHtml(payload, pairServiceName, pairCode);
-  }
-
-  private getQrPairingHtml(
-    payload: string,
-    pairServiceName: string,
-    pairCode: string,
-  ): string {
-    const nonce = createNonce();
-    const escapedPayload = escapeHtml(payload);
-    const escapedPairService = escapeHtml(pairServiceName);
-    const escapedPairCode = escapeHtml(pairCode);
-
-    return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta
-    http-equiv="Content-Security-Policy"
-    content="default-src 'none'; img-src data:; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}' https://unpkg.com;"
-  />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Pair Device with QR</title>
-  <style nonce="${nonce}">
-    :root {
-      color-scheme: light dark;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    }
-    body {
-      margin: 0;
-      padding: 20px;
-      display: grid;
-      gap: 14px;
-      justify-items: center;
-    }
-    #qrcode {
-      width: 288px;
-      min-height: 288px;
-      background: white;
-      border-radius: 12px;
-      display: grid;
-      place-items: center;
-      padding: 14px;
-      box-sizing: border-box;
-    }
-    #status {
-      margin: 0;
-      text-align: center;
-      opacity: 0.9;
-    }
-    .meta {
-      width: min(560px, 100%);
-      border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
-      border-radius: 10px;
-      padding: 12px;
-      box-sizing: border-box;
-      display: grid;
-      gap: 8px;
-    }
-    .label {
-      opacity: 0.75;
-      font-size: 12px;
-    }
-    code {
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      font-size: 12px;
-      word-break: break-all;
-      user-select: all;
-    }
-  </style>
-</head>
-<body>
-  <h2>Scan To Pair Device</h2>
-  <div id="qrcode"></div>
-  <p id="status">Preparing QR code...</p>
-  <div class="meta">
-    <div><span class="label">Service Name:</span> <code>${escapedPairService}</code></div>
-    <div><span class="label">Pairing Code:</span> <code>${escapedPairCode}</code></div>
-    <div><span class="label">QR Payload:</span> <code>${escapedPayload}</code></div>
-  </div>
-  <script nonce="${nonce}" src="https://unpkg.com/qrcodejs@1.0.0/qrcode.min.js"></script>
-  <script nonce="${nonce}">
-    const payload = ${JSON.stringify(payload)};
-    const root = document.getElementById("qrcode");
-    const status = document.getElementById("status");
-
-    function setMessage(text) {
-      if (status) {
-        status.textContent = text;
-      }
-    }
-
-    try {
-      if (!window.QRCode) {
-        throw new Error("QRCode library unavailable");
-      }
-
-      new window.QRCode(root, {
-        text: payload,
-        width: 260,
-        height: 260,
-        correctLevel: window.QRCode.CorrectLevel.M,
-      });
-      setMessage("Open Android Wireless debugging and scan this QR code.");
-    } catch (error) {
-      if (root) {
-        root.innerHTML = "<strong>QR generation failed.</strong>";
-      }
-      setMessage("QR code could not be rendered. Use pairing code connection.");
-    }
-  </script>
-</body>
-</html>`;
   }
 
   private randomFromAlphabet(length: number, alphabet: string): string {

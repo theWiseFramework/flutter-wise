@@ -37,10 +37,19 @@ export type DevicesViewSection = {
   items: DevicesViewItem[];
 };
 
+export type DevicesQrPairingState = {
+  payload: string;
+  pairServiceName: string;
+  pairCode: string;
+  statusMessage: string;
+};
+
 export type DevicesViewModel = {
   sections: DevicesViewSection[];
+  qrPairing?: DevicesQrPairingState;
 };
 
 export type DevicesWebviewMessage =
   | { type: "ready" }
-  | { type: "action"; action: DevicesActionId };
+  | { type: "action"; action: DevicesActionId }
+  | { type: "cancelQr" };

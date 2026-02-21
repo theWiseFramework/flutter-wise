@@ -56,6 +56,11 @@ export class FlutterWiseDevicesWebviewProvider
       return;
     }
 
+    if (message.type === "cancelQr") {
+      this.controller.cancelQrPairing();
+      return;
+    }
+
     if (message.type === "action") {
       const commandId = actionToCommand[message.action];
       if (!commandId) {
@@ -87,7 +92,7 @@ export class FlutterWiseDevicesWebviewProvider
   <meta charset="UTF-8" />
   <meta
     http-equiv="Content-Security-Policy"
-    content="default-src 'none'; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}';"
+    content="default-src 'none'; img-src data:; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}' https://unpkg.com;"
   />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Flutter Wise Devices</title>
@@ -225,6 +230,83 @@ export class FlutterWiseDevicesWebviewProvider
       font-size: 12px;
     }
 
+    .qr-wrap {
+      display: grid;
+      gap: 10px;
+      border: 1px solid color-mix(in srgb, var(--border) 85%, transparent);
+      border-radius: 10px;
+      padding: 10px;
+      background: color-mix(in srgb, var(--card) 75%, transparent);
+    }
+
+    .qr-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .back {
+      border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+      border-radius: 8px;
+      background: color-mix(in srgb, var(--accent) 12%, transparent);
+      color: var(--text);
+      font: inherit;
+      cursor: pointer;
+      padding: 4px 8px;
+    }
+
+    .back:hover {
+      background: color-mix(in srgb, var(--accent) 20%, transparent);
+    }
+
+    .qr-status {
+      margin: 0;
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .qr-box {
+      width: 100%;
+      background: white;
+      border-radius: 10px;
+      padding: 10px;
+      display: grid;
+      place-items: center;
+      min-height: 232px;
+    }
+
+    .qr-target {
+      width: 208px;
+      height: 208px;
+      display: grid;
+      place-items: center;
+    }
+
+    .meta {
+      display: grid;
+      gap: 6px;
+    }
+
+    .meta-row {
+      display: grid;
+      gap: 2px;
+    }
+
+    .meta-label {
+      font-size: 10px;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .meta-value {
+      font-family: var(--vscode-editor-font-family, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+      font-size: 11px;
+      overflow-wrap: anywhere;
+      user-select: all;
+    }
+
     .empty {
       margin: 0;
       color: var(--muted);
@@ -236,6 +318,7 @@ export class FlutterWiseDevicesWebviewProvider
   <main id="root">
     <p class="empty">Loading device state...</p>
   </main>
+  <script nonce="${nonce}" src="https://unpkg.com/qrcodejs@1.0.0/qrcode.min.js"></script>
   <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
     const root = document.getElementById("root");
@@ -250,6 +333,78 @@ export class FlutterWiseDevicesWebviewProvider
       const dot = document.createElement("span");
       dot.className = "tone " + (tone || "neutral");
       return dot;
+    }
+
+    function appendMetaRow(parent, label, value) {
+      const row = document.createElement("div");
+      row.className = "meta-row";
+
+      const metaLabel = document.createElement("span");
+      metaLabel.className = "meta-label";
+      metaLabel.textContent = label;
+      row.appendChild(metaLabel);
+
+      const metaValue = document.createElement("span");
+      metaValue.className = "meta-value";
+      metaValue.textContent = value || "";
+      row.appendChild(metaValue);
+
+      parent.appendChild(row);
+    }
+
+    function renderQrPairing(itemsRoot, qrPairing) {
+      const wrap = document.createElement("article");
+      wrap.className = "qr-wrap";
+
+      const top = document.createElement("div");
+      top.className = "qr-top";
+
+      const back = document.createElement("button");
+      back.type = "button";
+      back.className = "back";
+      back.dataset.event = "cancelQr";
+      back.textContent = "← Back";
+      top.appendChild(back);
+
+      const status = document.createElement("p");
+      status.className = "qr-status";
+      status.textContent = qrPairing.statusMessage || "Waiting for QR scan...";
+      top.appendChild(status);
+
+      wrap.appendChild(top);
+
+      const qrBox = document.createElement("div");
+      qrBox.className = "qr-box";
+
+      const qrTarget = document.createElement("div");
+      qrTarget.className = "qr-target";
+      qrBox.appendChild(qrTarget);
+      wrap.appendChild(qrBox);
+
+      const meta = document.createElement("div");
+      meta.className = "meta";
+      appendMetaRow(meta, "Service Name", qrPairing.pairServiceName || "");
+      appendMetaRow(meta, "Pairing Code", qrPairing.pairCode || "");
+      appendMetaRow(meta, "QR Payload", qrPairing.payload || "");
+      wrap.appendChild(meta);
+
+      itemsRoot.appendChild(wrap);
+
+      try {
+        if (!window.QRCode) {
+          throw new Error("QRCode library unavailable");
+        }
+
+        qrTarget.innerHTML = "";
+        new window.QRCode(qrTarget, {
+          text: qrPairing.payload || "",
+          width: 200,
+          height: 200,
+          correctLevel: window.QRCode.CorrectLevel.M,
+        });
+      } catch (_error) {
+        qrTarget.textContent = "QR rendering unavailable.";
+      }
     }
 
     function render(model) {
@@ -276,58 +431,65 @@ export class FlutterWiseDevicesWebviewProvider
         const items = document.createElement("div");
         items.className = "items";
 
-        for (const item of section.items || []) {
-          if (item.kind === "action" && item.actionId) {
-            const button = document.createElement("button");
-            button.type = "button";
-            button.className = "action";
-            button.dataset.action = item.actionId;
+        const isConnectionSection = section.title === "Connection";
+        const qrPairing = isConnectionSection ? model.qrPairing : undefined;
+
+        if (qrPairing) {
+          renderQrPairing(items, qrPairing);
+        } else {
+          for (const item of section.items || []) {
+            if (item.kind === "action" && item.actionId) {
+              const button = document.createElement("button");
+              button.type = "button";
+              button.className = "action";
+              button.dataset.action = item.actionId;
+
+              const label = document.createElement("span");
+              label.className = "label";
+              label.textContent = item.label || "Action";
+              button.appendChild(label);
+
+              if (item.description) {
+                const desc = document.createElement("span");
+                desc.className = "desc";
+                desc.textContent = item.description;
+                button.appendChild(desc);
+              }
+
+              items.appendChild(button);
+              continue;
+            }
+
+            const row = document.createElement("article");
+            row.className = "item";
+
+            const line = document.createElement("div");
+            line.className = "line";
+
+            const labelWrap = document.createElement("div");
+            labelWrap.style.display = "flex";
+            labelWrap.style.alignItems = "center";
+            labelWrap.style.gap = "8px";
+
+            labelWrap.appendChild(createToneDot(item.tone));
 
             const label = document.createElement("span");
             label.className = "label";
-            label.textContent = item.label || "Action";
-            button.appendChild(label);
+            label.textContent = item.label || "Item";
+            labelWrap.appendChild(label);
+
+            line.appendChild(labelWrap);
+            row.appendChild(line);
 
             if (item.description) {
-              const desc = document.createElement("span");
+              const desc = document.createElement("p");
               desc.className = "desc";
               desc.textContent = item.description;
-              button.appendChild(desc);
+              row.appendChild(desc);
             }
 
-            items.appendChild(button);
-            continue;
+            items.appendChild(row);
           }
-
-          const row = document.createElement("article");
-          row.className = "item";
-
-          const line = document.createElement("div");
-          line.className = "line";
-
-          const labelWrap = document.createElement("div");
-          labelWrap.style.display = "flex";
-          labelWrap.style.alignItems = "center";
-          labelWrap.style.gap = "8px";
-
-          labelWrap.appendChild(createToneDot(item.tone));
-
-          const label = document.createElement("span");
-          label.className = "label";
-          label.textContent = item.label || "Item";
-          labelWrap.appendChild(label);
-
-          line.appendChild(labelWrap);
-          row.appendChild(line);
-
-          if (item.description) {
-            const desc = document.createElement("p");
-            desc.className = "desc";
-            desc.textContent = item.description;
-            row.appendChild(desc);
-          }
-
-          items.appendChild(row);
         }
 
         panel.appendChild(items);
@@ -338,6 +500,12 @@ export class FlutterWiseDevicesWebviewProvider
     root.addEventListener("click", (event) => {
       const target = event.target;
       if (!(target instanceof Element)) {
+        return;
+      }
+
+      const cancelButton = target.closest("button[data-event='cancelQr']");
+      if (cancelButton instanceof HTMLButtonElement) {
+        vscode.postMessage({ type: "cancelQr" });
         return;
       }
 
@@ -363,7 +531,7 @@ export class FlutterWiseDevicesWebviewProvider
         return;
       }
 
-      render(message.payload);
+      render(message.payload || {});
     });
 
     vscode.postMessage({ type: "ready" });
