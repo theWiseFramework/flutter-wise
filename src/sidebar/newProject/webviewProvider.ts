@@ -5,10 +5,26 @@ import { resolveFlutterPath } from "../../core/flutterPath";
 import { commandExists, execCmd } from "../../core/exec";
 import { createNonce } from "../shared/webview";
 
+type TemplateValue =
+  | "app"
+  | "module"
+  | "package"
+  | "plugin"
+  | "plugin_ffi";
+
+type AndroidLanguage = "kotlin" | "java";
+type IosLanguage = "swift" | "objc";
+
 type CreateProjectPayload = {
-  name: string;
   folder: string;
+  folderName: string;
+  projectName?: string;
+  description?: string;
   appId?: string;
+  emptyProject?: boolean;
+  template?: TemplateValue;
+  androidLanguage?: AndroidLanguage;
+  iosLanguage?: IosLanguage;
   platforms: string[];
   extraArgs?: string;
 };
@@ -20,6 +36,13 @@ type NewProjectMessage =
 
 const VALID_PROJECT_NAME = /^[a-z][a-z0-9_]*$/;
 const VALID_APP_ID_PART = /^[a-zA-Z][a-zA-Z0-9_]*$/;
+const TEMPLATE_OPTIONS = [
+  "app",
+  "module",
+  "package",
+  "plugin",
+  "plugin_ffi",
+] as const;
 const ALL_PLATFORMS = [
   "android",
   "ios",
@@ -28,6 +51,8 @@ const ALL_PLATFORMS = [
   "macos",
   "windows",
 ] as const;
+const ANDROID_LANG_OPTIONS = ["kotlin", "java"] as const;
+const IOS_LANG_OPTIONS = ["swift", "objc"] as const;
 
 export class FlutterWiseNewProjectWebviewProvider
   implements vscode.WebviewViewProvider, vscode.Disposable
@@ -132,38 +157,46 @@ export class FlutterWiseNewProjectWebviewProvider
       return;
     }
 
-    const name = payload.name.trim();
     const folder = payload.folder.trim();
+    const folderName = payload.folderName.trim();
+    const explicitProjectName = payload.projectName?.trim() ?? "";
+    const description = payload.description?.trim() ?? "";
     const appId = payload.appId?.trim() ?? "";
+    const emptyProject = Boolean(payload.emptyProject);
+    const template = payload.template ?? "app";
+    const androidLanguage = payload.androidLanguage?.trim() ?? "";
+    const iosLanguage = payload.iosLanguage?.trim() ?? "";
     const extraArgs = payload.extraArgs?.trim() ?? "";
-
-    if (!name) {
-      this.postError("Project name is required.");
-      return;
-    }
-
-    if (!VALID_PROJECT_NAME.test(name)) {
-      this.postError(
-        "Project name must start with a lowercase letter and use only lowercase letters, numbers, and underscores.",
-      );
-      return;
-    }
 
     if (!folder) {
       this.postError("Parent folder is required.");
       return;
     }
 
-    const platforms = payload.platforms.filter((platform): platform is string =>
-      ALL_PLATFORMS.includes(platform as (typeof ALL_PLATFORMS)[number]),
-    );
+    if (!folderName) {
+      this.postError("Folder name is required.");
+      return;
+    }
+
+    if (
+      folderName.includes("/") ||
+      folderName.includes("\\") ||
+      folderName === "." ||
+      folderName === ".."
+    ) {
+      this.postError("Folder name must be a single folder segment.");
+      return;
+    }
 
     let org: string | undefined;
-    let derivedProjectName: string | undefined;
+    let projectNameFromAppId: string | undefined;
 
     if (appId) {
       const idParts = appId.split(".").filter((part) => part.length > 0);
-      if (idParts.length < 2 || idParts.some((part) => !VALID_APP_ID_PART.test(part))) {
+      if (
+        idParts.length < 2 ||
+        idParts.some((part) => !VALID_APP_ID_PART.test(part))
+      ) {
         this.postError(
           "App ID must be in reverse-domain format (example: com.example.my_app).",
         );
@@ -171,15 +204,71 @@ export class FlutterWiseNewProjectWebviewProvider
       }
 
       org = idParts.slice(0, -1).join(".");
-      derivedProjectName = idParts[idParts.length - 1];
+      projectNameFromAppId = idParts[idParts.length - 1];
 
-      if (!derivedProjectName || !VALID_PROJECT_NAME.test(derivedProjectName)) {
+      if (!VALID_PROJECT_NAME.test(projectNameFromAppId)) {
         this.postError(
           "The last segment of App ID must be a valid Dart package name (example: my_app).",
         );
         return;
       }
     }
+
+    if (explicitProjectName && !VALID_PROJECT_NAME.test(explicitProjectName)) {
+      this.postError(
+        "Project Name must start with a lowercase letter and use only lowercase letters, numbers, and underscores.",
+      );
+      return;
+    }
+
+    if (
+      explicitProjectName &&
+      projectNameFromAppId &&
+      explicitProjectName !== projectNameFromAppId
+    ) {
+      this.postError(
+        "Project Name must match the last segment of App ID because Flutter derives app id from org + project name.",
+      );
+      return;
+    }
+
+    let resolvedProjectName = explicitProjectName || projectNameFromAppId || "";
+    if (!resolvedProjectName) {
+      if (!VALID_PROJECT_NAME.test(folderName)) {
+        this.postError(
+          "Folder name is not a valid Dart package name. Provide Project Name explicitly.",
+        );
+        return;
+      }
+
+      resolvedProjectName = folderName;
+    }
+
+    if (!TEMPLATE_OPTIONS.includes(template)) {
+      this.postError("Selected template is invalid.");
+      return;
+    }
+
+    const supportsPlatforms = template !== "package" && template !== "module";
+    const supportsAndroidLanguage = template !== "plugin_ffi";
+
+    if (
+      androidLanguage &&
+      !ANDROID_LANG_OPTIONS.includes(androidLanguage as AndroidLanguage)
+    ) {
+      this.postError("android-language must be kotlin or java.");
+      return;
+    }
+
+    if (iosLanguage && !IOS_LANG_OPTIONS.includes(iosLanguage as IosLanguage)) {
+      this.postError("ios-language must be swift or objc.");
+      return;
+    }
+
+    const selectedPlatforms = payload.platforms.filter((platform): platform is string =>
+      ALL_PLATFORMS.includes(platform as (typeof ALL_PLATFORMS)[number]),
+    );
+    const platforms = supportsPlatforms ? selectedPlatforms : [];
 
     try {
       const folderStat = await fs.stat(folder);
@@ -192,10 +281,10 @@ export class FlutterWiseNewProjectWebviewProvider
       return;
     }
 
-    const targetPath = path.join(folder, name);
+    const targetPath = path.join(folder, folderName);
     try {
       await fs.access(targetPath);
-      this.postError("Target folder already exists. Choose another name or folder.");
+      this.postError("Target folder already exists. Choose another folder name.");
       return;
     } catch {
       // expected when folder does not yet exist
@@ -216,12 +305,30 @@ export class FlutterWiseNewProjectWebviewProvider
       args.push("--platforms", platforms.join(","));
     }
 
+    if (description) {
+      args.push("--description", description);
+    }
+
     if (org) {
       args.push("--org", org);
     }
 
-    if (derivedProjectName && derivedProjectName !== name) {
-      args.push("--project-name", derivedProjectName);
+    if (resolvedProjectName !== folderName) {
+      args.push("--project-name", resolvedProjectName);
+    }
+
+    if (supportsAndroidLanguage && androidLanguage) {
+      args.push("--android-language", androidLanguage);
+    }
+
+    if (iosLanguage) {
+      args.push("--ios-language", iosLanguage);
+    }
+
+    if (emptyProject) {
+      args.push("--empty");
+    } else if (template !== "app") {
+      args.push("--template", template);
     }
 
     const parsedExtraArgs = this.parseExtraArgs(extraArgs);
@@ -431,7 +538,8 @@ export class FlutterWiseNewProjectWebviewProvider
       margin: 0;
     }
 
-    input[type="text"] {
+    input[type="text"],
+    select {
       width: 100%;
       border: 1px solid var(--border);
       background: color-mix(in srgb, var(--card) 80%, transparent);
@@ -441,7 +549,8 @@ export class FlutterWiseNewProjectWebviewProvider
       padding: 7px 8px;
     }
 
-    input[type="text"]:focus-visible {
+    input[type="text"]:focus-visible,
+    select:focus-visible {
       outline: 1px solid var(--accent);
       outline-offset: 1px;
     }
@@ -484,6 +593,17 @@ export class FlutterWiseNewProjectWebviewProvider
       font-size: 11px;
     }
 
+    .check {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 11px;
+      border: 1px solid color-mix(in srgb, var(--border) 85%, transparent);
+      border-radius: 10px;
+      padding: 8px;
+      background: color-mix(in srgb, var(--card) 72%, transparent);
+    }
+
     .actions {
       display: grid;
       gap: 8px;
@@ -506,7 +626,8 @@ export class FlutterWiseNewProjectWebviewProvider
 
     .create:disabled,
     .ghost:disabled,
-    input:disabled {
+    input:disabled,
+    select:disabled {
       opacity: 0.6;
       cursor: not-allowed;
     }
@@ -546,11 +667,6 @@ export class FlutterWiseNewProjectWebviewProvider
     <h3 class="title">New Flutter Project</h3>
 
     <div class="row">
-      <p class="label">Name</p>
-      <input id="name" type="text" placeholder="my_app" required />
-    </div>
-
-    <div class="row">
       <p class="label">Parent Folder</p>
       <div class="folder-row">
         <input id="folder" type="text" placeholder="/path/to/projects" required />
@@ -559,14 +675,30 @@ export class FlutterWiseNewProjectWebviewProvider
     </div>
 
     <div class="row">
+      <p class="label">Folder Name</p>
+      <input id="folderName" type="text" placeholder="my_app_folder" required />
+    </div>
+
+    <div class="row">
+      <p class="label">Project Name (optional)</p>
+      <input id="projectName" type="text" placeholder="my_app" />
+      <p class="hint">Dart package name. Needed when folder name is not a valid package name.</p>
+    </div>
+
+    <div class="row">
+      <p class="label">Description (optional)</p>
+      <input id="description" type="text" placeholder="A new Flutter project." />
+    </div>
+
+    <div class="row">
       <p class="label">App ID (optional)</p>
       <input id="appId" type="text" placeholder="com.example.my_app" />
-      <p class="hint">If provided, this controls --org and package id suffix.</p>
+      <p class="hint">Maps to --org + package suffix. If Project Name is set, it must match App ID suffix.</p>
     </div>
 
     <div class="row">
       <p class="label">Target Platforms</p>
-      <div class="platforms">
+      <div id="platforms" class="platforms">
         <label class="platform"><input type="checkbox" value="android" checked /> Android</label>
         <label class="platform"><input type="checkbox" value="ios" checked /> iOS</label>
         <label class="platform"><input type="checkbox" value="web" checked /> Web</label>
@@ -574,11 +706,47 @@ export class FlutterWiseNewProjectWebviewProvider
         <label class="platform"><input type="checkbox" value="macos" checked /> macOS</label>
         <label class="platform"><input type="checkbox" value="windows" checked /> Windows</label>
       </div>
+      <p id="platformsHint" class="hint"></p>
+    </div>
+
+    <div class="row">
+      <p class="label">Empty Project</p>
+      <label class="check"><input id="emptyProject" type="checkbox" /> Use --empty and disable template</label>
+    </div>
+
+    <div class="row">
+      <p class="label">Template (optional)</p>
+      <select id="template">
+        <option value="app" selected>app (default)</option>
+        <option value="module">module</option>
+        <option value="package">package</option>
+        <option value="plugin">plugin</option>
+        <option value="plugin_ffi">plugin_ffi</option>
+      </select>
+    </div>
+
+    <div class="row">
+      <p class="label">android-language (optional)</p>
+      <select id="androidLanguage">
+        <option value="">default</option>
+        <option value="kotlin">kotlin</option>
+        <option value="java">java</option>
+      </select>
+      <p id="androidLangHint" class="hint"></p>
+    </div>
+
+    <div class="row">
+      <p class="label">ios-language (optional)</p>
+      <select id="iosLanguage">
+        <option value="">default</option>
+        <option value="swift">swift</option>
+        <option value="objc">objc</option>
+      </select>
     </div>
 
     <div class="row">
       <p class="label">Optional Args</p>
-      <input id="extraArgs" type="text" placeholder="--template app --empty" />
+      <input id="extraArgs" type="text" placeholder="--sample=counter" />
       <p class="hint">Extra args are appended to flutter create.</p>
     </div>
 
@@ -593,21 +761,66 @@ export class FlutterWiseNewProjectWebviewProvider
     const vscode = acquireVsCodeApi();
 
     const form = document.getElementById("form");
-    const nameInput = document.getElementById("name");
     const folderInput = document.getElementById("folder");
+    const folderNameInput = document.getElementById("folderName");
+    const projectNameInput = document.getElementById("projectName");
+    const descriptionInput = document.getElementById("description");
     const appIdInput = document.getElementById("appId");
+    const emptyProjectInput = document.getElementById("emptyProject");
+    const templateSelect = document.getElementById("template");
+    const platformsContainer = document.getElementById("platforms");
+    const platformsHint = document.getElementById("platformsHint");
+    const platformCheckboxes = Array.from(form.querySelectorAll('.platforms input[type="checkbox"]'));
+    const androidLanguageSelect = document.getElementById("androidLanguage");
+    const androidLangHint = document.getElementById("androidLangHint");
+    const iosLanguageSelect = document.getElementById("iosLanguage");
     const extraArgsInput = document.getElementById("extraArgs");
     const browseButton = document.getElementById("browse");
     const createButton = document.getElementById("create");
     const messageEl = document.getElementById("message");
 
+    function syncTemplateConstraints() {
+      const template = templateSelect.value;
+      const supportsPlatforms = template !== "package" && template !== "module";
+      const supportsAndroidLanguage = template !== "plugin_ffi";
+
+      for (const checkbox of platformCheckboxes) {
+        checkbox.disabled = !supportsPlatforms;
+      }
+      platformsContainer.style.opacity = supportsPlatforms ? "1" : "0.6";
+      platformsHint.textContent = supportsPlatforms
+        ? ""
+        : 'The "--platforms" option is not supported for template "package" or "module".';
+
+      androidLanguageSelect.disabled = !supportsAndroidLanguage;
+      if (!supportsAndroidLanguage) {
+        androidLanguageSelect.value = "";
+      }
+      androidLangHint.textContent = supportsAndroidLanguage
+        ? ""
+        : 'The "android-language" option is ignored for template "plugin_ffi".';
+    }
+
+    function syncEmptyState() {
+      const emptyChecked = Boolean(emptyProjectInput.checked);
+      templateSelect.disabled = emptyChecked;
+      if (emptyChecked) {
+        templateSelect.value = "app";
+      }
+      syncTemplateConstraints();
+    }
+
     function setBusy(isBusy) {
-      for (const input of form.querySelectorAll("input")) {
+      for (const input of form.querySelectorAll("input, select")) {
         input.disabled = isBusy;
       }
       browseButton.disabled = isBusy;
       createButton.disabled = isBusy;
       createButton.textContent = isBusy ? "Creating..." : "Create Project";
+
+      if (!isBusy) {
+        syncEmptyState();
+      }
     }
 
     function setMessage(type, text) {
@@ -626,6 +839,13 @@ export class FlutterWiseNewProjectWebviewProvider
       vscode.postMessage({ type: "pickFolder" });
     });
 
+    emptyProjectInput.addEventListener("change", () => {
+      syncEmptyState();
+    });
+    templateSelect.addEventListener("change", () => {
+      syncTemplateConstraints();
+    });
+
     form.addEventListener("submit", (event) => {
       event.preventDefault();
 
@@ -640,9 +860,15 @@ export class FlutterWiseNewProjectWebviewProvider
       vscode.postMessage({
         type: "createProject",
         payload: {
-          name: nameInput.value,
           folder: folderInput.value,
+          folderName: folderNameInput.value,
+          projectName: projectNameInput.value,
+          description: descriptionInput.value,
           appId: appIdInput.value,
+          emptyProject: emptyProjectInput.checked,
+          template: templateSelect.value,
+          androidLanguage: androidLanguageSelect.value,
+          iosLanguage: iosLanguageSelect.value,
           platforms,
           extraArgs: extraArgsInput.value,
         },
@@ -659,9 +885,10 @@ export class FlutterWiseNewProjectWebviewProvider
         if (!folderInput.value) {
           folderInput.value = message.payload?.defaultFolder || "";
         }
-        if (!nameInput.value) {
-          nameInput.value = "my_app";
+        if (!folderNameInput.value) {
+          folderNameInput.value = "my_app";
         }
+        syncEmptyState();
         return;
       }
 
@@ -685,6 +912,7 @@ export class FlutterWiseNewProjectWebviewProvider
       }
     });
 
+    syncEmptyState();
     vscode.postMessage({ type: "ready" });
   </script>
 </body>

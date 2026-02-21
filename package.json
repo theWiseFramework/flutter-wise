@@ -151,13 +151,13 @@
     "views": {
       "flutterWiseContainer": [
         {
-          "id": "flutterWiseNewProjectView",
-          "name": "New Flutter Project",
+          "id": "flutterWiseDevicesView",
+          "name": "Devices",
           "type": "webview"
         },
         {
-          "id": "flutterWiseDevicesView",
-          "name": "Devices",
+          "id": "flutterWiseNewProjectView",
+          "name": "New Flutter Project",
           "type": "webview"
         },
         {
