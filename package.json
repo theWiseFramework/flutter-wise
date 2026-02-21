@@ -23,7 +23,8 @@
     "onCommand:flutterWise.initWorkspace",
     "onCommand:flutterWise.undoWorkspaceInit",
     "onView:flutterWiseDevicesView",
-    "onView:flutterWiseToolsView"
+    "onView:flutterWiseToolsView",
+    "onView:flutterWiseNewProjectView"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -149,6 +150,11 @@
     },
     "views": {
       "flutterWiseContainer": [
+        {
+          "id": "flutterWiseNewProjectView",
+          "name": "New Flutter Project",
+          "type": "webview"
+        },
         {
           "id": "flutterWiseDevicesView",
           "name": "Devices",

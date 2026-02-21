@@ -6,6 +6,7 @@ import { FlutterWiseToolsWebviewProvider } from "./sidebar/tools/webviewProvider
 import { registerDevicesCommands } from "./sidebar/devices/commands";
 import { FlutterWiseDevicesController } from "./sidebar/devices/controller";
 import { FlutterWiseDevicesWebviewProvider } from "./sidebar/devices/webviewProvider";
+import { FlutterWiseNewProjectWebviewProvider } from "./sidebar/newProject/webviewProvider";
 
 export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(registerInitWorkspace());
@@ -17,6 +18,7 @@ export function activate(context: vscode.ExtensionContext) {
     devicesController,
   );
   const toolsWebviewProvider = new FlutterWiseToolsWebviewProvider();
+  const newProjectWebviewProvider = new FlutterWiseNewProjectWebviewProvider();
 
   context.subscriptions.push(
     devicesWebviewProvider,
@@ -31,6 +33,13 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.window.registerWebviewViewProvider(
       "flutterWiseToolsView",
       toolsWebviewProvider,
+    ),
+  );
+  context.subscriptions.push(
+    newProjectWebviewProvider,
+    vscode.window.registerWebviewViewProvider(
+      "flutterWiseNewProjectView",
+      newProjectWebviewProvider,
     ),
   );
 }
