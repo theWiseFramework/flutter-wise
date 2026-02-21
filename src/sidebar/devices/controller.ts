@@ -1,79 +1,132 @@
-import * as vscode from "vscode";
 import { randomBytes } from "node:crypto";
-import { commandExists, execCmd, showToolMissing } from "../core/exec";
-import { resolveAdbPath } from "../core/adbPath";
-
-type Node =
-  | { kind: "group"; label: string; icon: vscode.ThemeIcon; children: Node[] }
-  | {
-      kind: "action";
-      label: string;
-      description?: string;
-      icon: vscode.ThemeIcon;
-      command?: vscode.Command;
-      contextValue?: string;
-    };
-
-type AdbDevice = {
-  serial: string;
-  state: string;
-  model?: string;
-  details?: string;
-};
-
-type MdnsService = {
-  instance: string;
-  serviceType: string;
-  endpoint: string;
-};
-
-const CMD_REFRESH = "flutterWise.devices.refresh";
-const CMD_CONNECT = "flutterWise.devices.connect";
-const CMD_CONNECT_IP = "flutterWise.devices.connect.ip";
-const CMD_CONNECT_QR = "flutterWise.devices.connect.qr";
-const CMD_CONNECT_PAIR = "flutterWise.devices.connect.pair";
-
-type ConnectMethod = "ip" | "qr" | "pair";
+import * as vscode from "vscode";
+import { resolveAdbPath } from "../../core/adbPath";
+import { commandExists, execCmd, showToolMissing } from "../../core/exec";
+import { createNonce, escapeHtml } from "../shared/webview";
+import type {
+  AdbDevice,
+  ConnectMethod,
+  DevicesViewItem,
+  DevicesViewModel,
+  MdnsService,
+} from "./types";
 
 const ADB_TLS_PAIRING_SERVICE = "_adb-tls-pairing._tcp";
 const ADB_TLS_CONNECT_SERVICE = "_adb-tls-connect._tcp";
 const QR_SCAN_TIMEOUT_MS = 90_000;
 const CONNECT_DISCOVERY_TIMEOUT_MS = 20_000;
 
-export class FlutterWiseDevicesProvider implements vscode.TreeDataProvider<Node> {
-  private _onDidChangeTreeData = new vscode.EventEmitter<Node | undefined>();
-  readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
+export class FlutterWiseDevicesController {
+  private readonly onDidChangeEmitter = new vscode.EventEmitter<void>();
+  readonly onDidChange = this.onDidChangeEmitter.event;
 
-  getTreeItem(element: Node): vscode.TreeItem {
-    if (element.kind === "group") {
-      const item = new vscode.TreeItem(
-        element.label,
-        element.children.length > 0
-          ? vscode.TreeItemCollapsibleState.Expanded
-          : vscode.TreeItemCollapsibleState.None,
-      );
-      item.iconPath = element.icon;
-      return item;
-    }
-
-    const item = new vscode.TreeItem(element.label);
-    item.description = element.description;
-    item.iconPath = element.icon;
-    item.command = element.command;
-    item.contextValue = element.contextValue;
-    return item;
+  refresh(): void {
+    this.onDidChangeEmitter.fire();
   }
 
-  async getChildren(element?: Node): Promise<Node[]> {
-    if (element?.kind === "group") {
-      return element.children;
+  async getViewModel(): Promise<DevicesViewModel> {
+    const adb = (await resolveAdbPath()) ?? "adb";
+    const adbExists = await commandExists(adb);
+
+    if (!adbExists) {
+      return {
+        sections: [
+          {
+            title: "ADB Status",
+            items: [
+              {
+                kind: "status",
+                label: "adb not found in PATH",
+                description: "Install Android platform-tools",
+                tone: "error",
+              },
+            ],
+          },
+        ],
+      };
     }
 
-    return this.buildRootNodes();
-  }
+    const startServer = await execCmd(adb, ["start-server"]);
+    const devicesResult = await execCmd(adb, ["devices", "-l"]);
+    const adbOk = startServer.code === 0 && devicesResult.code === 0;
+    const devices = adbOk ? this.parseAdbDevices(devicesResult.stdout) : [];
 
-  refresh() {
-    this._onDidChangeTreeData.fire(undefined);
+    return {
+      sections: [
+        {
+          title: "ADB Status",
+          items: [
+            {
+              kind: "status",
+              label: adbOk ? "adb ready" : "adb failed",
+              description: adbOk
+                ? "Server reachable"
+                : this.cleanOutput(startServer.stderr) ||
+                  this.cleanOutput(devicesResult.stderr) ||
+                  "Check adb setup and retry",
+              tone: adbOk ? "ok" : "error",
+            },
+          ],
+        },
+        {
+          title: "Connected Devices",
+          items:
+            devices.length > 0
+              ? devices.map<DevicesViewItem>((device) => ({
+                  kind: "device",
+                  label: device.model ?? device.serial,
+                  description: device.details
+                    ? `${device.state} · ${device.details}`
+                    : device.state,
+                  tone: device.state === "device" ? "ok" : "warning",
+                }))
+              : [
+                  {
+                    kind: "device",
+                    label: "No connected devices",
+                    description: "Enable USB debugging or wireless debugging",
+                    tone: "neutral",
+                  },
+                ],
+        },
+        {
+          title: "Connection",
+          items: [
+            {
+              kind: "action",
+              label: "Connect Device...",
+              description: "IP address, QR code, or pairing code",
+              tone: "neutral",
+              actionId: "connect",
+            },
+            {
+              kind: "action",
+              label: "Connect by IP",
+              tone: "neutral",
+              actionId: "connectIp",
+            },
+            {
+              kind: "action",
+              label: "Connect by QR",
+              tone: "neutral",
+              actionId: "connectQr",
+            },
+            {
+              kind: "action",
+              label: "Connect by Pairing Code",
+              tone: "neutral",
+              actionId: "connectPair",
+            },
+            {
+              kind: "action",
+              label: "Refresh",
+              tone: "neutral",
+              actionId: "refresh",
+            },
+          ],
+        },
+      ],
+    };
   }
 
   async promptConnectMethod(): Promise<void> {
@@ -185,13 +238,13 @@ export class FlutterWiseDevicesProvider implements vscode.TreeDataProvider<Node>
       return;
     }
 
-    const adb = await resolveAdbPath();
-
-    const pairResult = await execCmd(adb!, [
+    const adb = (await resolveAdbPath()) ?? "adb";
+    const pairResult = await execCmd(adb, [
       "pair",
       pairEndpoint.trim(),
       pairingCode.trim(),
     ]);
+
     if (pairResult.code !== 0) {
       const reason =
         this.cleanOutput(pairResult.stderr) ||
@@ -202,8 +255,7 @@ export class FlutterWiseDevicesProvider implements vscode.TreeDataProvider<Node>
       return;
     }
 
-    const pairOutput =
-      this.cleanOutput(pairResult.stdout) || "Pairing succeeded.";
+    const pairOutput = this.cleanOutput(pairResult.stdout) || "Pairing succeeded.";
     vscode.window.showInformationMessage(pairOutput);
 
     const suggestedHost = pairEndpoint.trim().split(":")[0];
@@ -218,6 +270,7 @@ export class FlutterWiseDevicesProvider implements vscode.TreeDataProvider<Node>
         return null;
       },
     });
+
     if (!connectEndpoint) {
       return;
     }
@@ -230,17 +283,16 @@ export class FlutterWiseDevicesProvider implements vscode.TreeDataProvider<Node>
       return;
     }
 
-    const adb = await resolveAdbPath();
+    const adb = (await resolveAdbPath()) ?? "adb";
     const pairServiceName = `studio-${this.randomFromAlphabet(8, "abcdefghijklmnopqrstuvwxyz0123456789")}`;
     const pairCode = this.randomFromAlphabet(12, "ABCDEFGHJKLMNPQRSTUVWXYZ23456789");
     const payload = `WIFI:T:ADB;S:${pairServiceName};P:${pairCode};;`;
+
     this.showQrPairingPanel(payload, pairServiceName, pairCode);
 
     const knownConnectEndpoints = new Set(
-      (await this.listMdnsServices(adb!))
-        .filter((service) =>
-          service.serviceType.includes(ADB_TLS_CONNECT_SERVICE),
-        )
+      (await this.listMdnsServices(adb))
+        .filter((service) => service.serviceType.includes(ADB_TLS_CONNECT_SERVICE))
         .map((service) => service.endpoint),
     );
 
@@ -255,8 +307,9 @@ export class FlutterWiseDevicesProvider implements vscode.TreeDataProvider<Node>
           message:
             "Scan the QR code from Android Wireless debugging to start pairing.",
         });
+
         return this.waitForPairingEndpoint(
-          adb!,
+          adb,
           pairServiceName,
           QR_SCAN_TIMEOUT_MS,
           token,
@@ -264,6 +317,7 @@ export class FlutterWiseDevicesProvider implements vscode.TreeDataProvider<Node>
         );
       },
     );
+
     if (!pairingEndpoint) {
       vscode.window.showWarningMessage(
         "QR pairing timed out. Scan the QR code again and retry.",
@@ -271,11 +325,7 @@ export class FlutterWiseDevicesProvider implements vscode.TreeDataProvider<Node>
       return;
     }
 
-    const pairResult = await execCmd(adb!, [
-      "pair",
-      pairingEndpoint,
-      pairCode,
-    ]);
+    const pairResult = await execCmd(adb, ["pair", pairingEndpoint, pairCode]);
     if (pairResult.code !== 0) {
       const reason =
         this.cleanOutput(pairResult.stderr) ||
@@ -286,15 +336,15 @@ export class FlutterWiseDevicesProvider implements vscode.TreeDataProvider<Node>
       return;
     }
 
-    const pairOutput =
-      this.cleanOutput(pairResult.stdout) || "Pairing succeeded.";
+    const pairOutput = this.cleanOutput(pairResult.stdout) || "Pairing succeeded.";
     vscode.window.showInformationMessage(pairOutput);
 
     const connectEndpoint = await this.waitForConnectEndpoint(
-      adb!,
+      adb,
       knownConnectEndpoints,
       CONNECT_DISCOVERY_TIMEOUT_MS,
     );
+
     if (!connectEndpoint) {
       vscode.window.showInformationMessage(
         "Device paired. If it is not connected yet, tap Refresh or use Connect by IP.",
@@ -305,131 +355,6 @@ export class FlutterWiseDevicesProvider implements vscode.TreeDataProvider<Node>
 
     await this.runAdbConnect(connectEndpoint);
     this.refresh();
-  }
-
-  private async buildRootNodes(): Promise<Node[]> {
-    const adb = await resolveAdbPath();
-    const adbExists = await commandExists(adb!);
-    if (!adbExists) {
-      return [
-        {
-          kind: "group",
-          label: "ADB Status",
-          icon: new vscode.ThemeIcon("warning"),
-          children: [
-            {
-              kind: "action",
-              label: "adb not found in PATH",
-              description: "Install Android platform-tools",
-              icon: new vscode.ThemeIcon("error"),
-            },
-          ],
-        },
-      ];
-    }
-
-    const startServer = await execCmd(adb!, ["start-server"]);
-    const devicesResult = await execCmd(adb!, ["devices", "-l"]);
-    const adbOk = startServer.code === 0 && devicesResult.code === 0;
-    const devices = adbOk ? this.parseAdbDevices(devicesResult.stdout) : [];
-
-    return [
-      {
-        kind: "group",
-        label: "ADB Status",
-        icon: new vscode.ThemeIcon(adbOk ? "pass-filled" : "error"),
-        children: [
-          {
-            kind: "action",
-            label: adbOk ? "adb ready" : "adb failed",
-            description: adbOk
-              ? "Server reachable"
-              : this.cleanOutput(startServer.stderr) ||
-                this.cleanOutput(devicesResult.stderr) ||
-                "Check adb setup and retry",
-            icon: new vscode.ThemeIcon(adbOk ? "check" : "error"),
-          },
-        ],
-      },
-      {
-        kind: "group",
-        label: "Connected Devices",
-        icon: new vscode.ThemeIcon("device-mobile"),
-        children:
-          devices.length > 0
-            ? devices.map<Node>((device) => ({
-                kind: "action",
-                label: device.model ?? device.serial,
-                description: device.details
-                  ? `${device.state} · ${device.details}`
-                  : device.state,
-                icon: new vscode.ThemeIcon(
-                  device.state === "device" ? "vm-active" : "warning",
-                ),
-              }))
-            : [
-                {
-                  kind: "action",
-                  label: "No connected devices",
-                  description: "Enable USB debugging or wireless debugging",
-                  icon: new vscode.ThemeIcon("circle-slash"),
-                },
-              ],
-      },
-      {
-        kind: "group",
-        label: "Connection",
-        icon: new vscode.ThemeIcon("plug"),
-        children: [
-          {
-            kind: "action",
-            label: "Connect Device…",
-            description: "IP address, QR code, or pairing code",
-            icon: new vscode.ThemeIcon("add"),
-            command: {
-              command: CMD_CONNECT,
-              title: "Connect Device",
-            },
-          },
-          {
-            kind: "action",
-            label: "Connect by IP",
-            icon: new vscode.ThemeIcon("globe"),
-            command: {
-              command: CMD_CONNECT_IP,
-              title: "Connect by IP",
-            },
-          },
-          {
-            kind: "action",
-            label: "Connect by QR",
-            icon: new vscode.ThemeIcon("symbol-event"),
-            command: {
-              command: CMD_CONNECT_QR,
-              title: "Connect by QR",
-            },
-          },
-          {
-            kind: "action",
-            label: "Connect by Pairing Code",
-            icon: new vscode.ThemeIcon("key"),
-            command: {
-              command: CMD_CONNECT_PAIR,
-              title: "Connect by Pairing Code",
-            },
-          },
-          {
-            kind: "action",
-            label: "Refresh",
-            icon: new vscode.ThemeIcon("refresh"),
-            command: {
-              command: CMD_REFRESH,
-              title: "Refresh Devices",
-            },
-          },
-        ],
-      },
-    ];
   }
 
   private parseAdbDevices(stdout: string): AdbDevice[] {
@@ -448,8 +373,6 @@ export class FlutterWiseDevicesProvider implements vscode.TreeDataProvider<Node>
 
       const serial = parts[0];
       const state = parts[1];
-
-      // Everything after state is key:value pairs
       const kvParts = parts.slice(2);
 
       const kv: Record<string, string> = {};
@@ -502,6 +425,7 @@ export class FlutterWiseDevicesProvider implements vscode.TreeDataProvider<Node>
           service.instance === pairServiceName &&
           service.serviceType.includes(ADB_TLS_PAIRING_SERVICE),
       );
+
       if (pairingService) {
         return pairingService.endpoint;
       }
@@ -525,11 +449,12 @@ export class FlutterWiseDevicesProvider implements vscode.TreeDataProvider<Node>
         service.serviceType.includes(ADB_TLS_CONNECT_SERVICE),
       );
 
-      const fresh = connectServices.find(
+      const freshService = connectServices.find(
         (service) => !knownConnectEndpoints.has(service.endpoint),
       );
-      if (fresh) {
-        return fresh.endpoint;
+
+      if (freshService) {
+        return freshService.endpoint;
       }
 
       await this.sleep(1000);
@@ -539,6 +464,7 @@ export class FlutterWiseDevicesProvider implements vscode.TreeDataProvider<Node>
     const finalConnectServices = finalServices.filter((service) =>
       service.serviceType.includes(ADB_TLS_CONNECT_SERVICE),
     );
+
     if (finalConnectServices.length === 1) {
       return finalConnectServices[0].endpoint;
     }
@@ -603,10 +529,10 @@ export class FlutterWiseDevicesProvider implements vscode.TreeDataProvider<Node>
     pairServiceName: string,
     pairCode: string,
   ): string {
-    const nonce = this.createNonce();
-    const escapedPayload = this.escapeHtml(payload);
-    const escapedPairService = this.escapeHtml(pairServiceName);
-    const escapedPairCode = this.escapeHtml(pairCode);
+    const nonce = createNonce();
+    const escapedPayload = escapeHtml(payload);
+    const escapedPairService = escapeHtml(pairServiceName);
+    const escapedPairCode = escapeHtml(pairCode);
 
     return `<!DOCTYPE html>
 <html lang="en">
@@ -721,26 +647,14 @@ export class FlutterWiseDevicesProvider implements vscode.TreeDataProvider<Node>
     return result;
   }
 
-  private createNonce(): string {
-    return randomBytes(16).toString("base64");
-  }
-
-  private escapeHtml(value: string): string {
-    return value
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#39;");
-  }
-
   private sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   private async ensureAdbReady(showErrors: boolean): Promise<boolean> {
-    const adb = await resolveAdbPath();
-    const adbExists = await commandExists(adb!);
+    const adb = (await resolveAdbPath()) ?? "adb";
+    const adbExists = await commandExists(adb);
+
     if (!adbExists) {
       if (showErrors) {
         showToolMissing("adb");
@@ -748,11 +662,10 @@ export class FlutterWiseDevicesProvider implements vscode.TreeDataProvider<Node>
       return false;
     }
 
-    const server = await execCmd(adb!, ["start-server"]);
+    const server = await execCmd(adb, ["start-server"]);
     if (server.code !== 0) {
       if (showErrors) {
-        const reason =
-          this.cleanOutput(server.stderr) || this.cleanOutput(server.stdout);
+        const reason = this.cleanOutput(server.stderr) || this.cleanOutput(server.stdout);
         vscode.window.showErrorMessage(
           `Failed to start adb server${reason ? `: ${reason}` : ""}`,
         );
@@ -764,10 +677,9 @@ export class FlutterWiseDevicesProvider implements vscode.TreeDataProvider<Node>
   }
 
   private async runAdbConnect(endpoint: string): Promise<void> {
-    const adb = await resolveAdbPath();
-    const result = await execCmd(adb!, ["connect", endpoint]);
-    const output =
-      this.cleanOutput(result.stdout) || this.cleanOutput(result.stderr);
+    const adb = (await resolveAdbPath()) ?? "adb";
+    const result = await execCmd(adb, ["connect", endpoint]);
+    const output = this.cleanOutput(result.stdout) || this.cleanOutput(result.stderr);
 
     if (result.code !== 0) {
       vscode.window.showErrorMessage(
@@ -782,24 +694,4 @@ export class FlutterWiseDevicesProvider implements vscode.TreeDataProvider<Node>
   private cleanOutput(value: string): string {
     return value.trim().replace(/\s+/g, " ");
   }
-}
-
-export function registerDevicesCommands(
-  provider: FlutterWiseDevicesProvider,
-): vscode.Disposable[] {
-  return [
-    vscode.commands.registerCommand(CMD_REFRESH, () => provider.refresh()),
-    vscode.commands.registerCommand(CMD_CONNECT, () =>
-      provider.promptConnectMethod(),
-    ),
-    vscode.commands.registerCommand(CMD_CONNECT_IP, () =>
-      provider.connectByIpAddress(),
-    ),
-    vscode.commands.registerCommand(CMD_CONNECT_QR, () =>
-      provider.connectByQrCode(),
-    ),
-    vscode.commands.registerCommand(CMD_CONNECT_PAIR, () =>
-      provider.connectByPairingCode(),
-    ),
-  ];
 }

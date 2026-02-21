@@ -151,11 +151,13 @@
       "flutterWiseContainer": [
         {
           "id": "flutterWiseDevicesView",
-          "name": "Devices"
+          "name": "Devices",
+          "type": "webview"
         },
         {
           "id": "flutterWiseToolsView",
-          "name": "Shortcuts"
+          "name": "Shortcuts",
+          "type": "webview"
         }
       ]
     },

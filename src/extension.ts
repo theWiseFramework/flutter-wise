@@ -2,30 +2,35 @@ import * as vscode from "vscode";
 import { registerInitWorkspace } from "./init/initWorkspace";
 import { registerUndoWorkspaceInit } from "./init/undoWorkspaceInit";
 import { registerCreateModule } from "./templates/createModule";
-import { FlutterWiseToolsProvider } from "./sidebar/toolsView";
-import {
-  FlutterWiseDevicesProvider,
-  registerDevicesCommands,
-} from "./sidebar/devicesView";
+import { FlutterWiseToolsWebviewProvider } from "./sidebar/tools/webviewProvider";
+import { registerDevicesCommands } from "./sidebar/devices/commands";
+import { FlutterWiseDevicesController } from "./sidebar/devices/controller";
+import { FlutterWiseDevicesWebviewProvider } from "./sidebar/devices/webviewProvider";
 
 export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(registerInitWorkspace());
   context.subscriptions.push(registerUndoWorkspaceInit());
   context.subscriptions.push(registerCreateModule());
 
-  const devicesProvider = new FlutterWiseDevicesProvider();
-  context.subscriptions.push(
-    vscode.window.registerTreeDataProvider(
-      "flutterWiseDevicesView",
-      devicesProvider,
-    ),
+  const devicesController = new FlutterWiseDevicesController();
+  const devicesWebviewProvider = new FlutterWiseDevicesWebviewProvider(
+    devicesController,
   );
-  context.subscriptions.push(...registerDevicesCommands(devicesProvider));
+  const toolsWebviewProvider = new FlutterWiseToolsWebviewProvider();
 
   context.subscriptions.push(
-    vscode.window.registerTreeDataProvider(
+    devicesWebviewProvider,
+    vscode.window.registerWebviewViewProvider(
+      "flutterWiseDevicesView",
+      devicesWebviewProvider,
+    ),
+  );
+  context.subscriptions.push(...registerDevicesCommands(devicesController));
+
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider(
       "flutterWiseToolsView",
-      new FlutterWiseToolsProvider(),
+      toolsWebviewProvider,
     ),
   );
 }
