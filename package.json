@@ -10,7 +10,7 @@
     "url": "https://github.com/theWiseFramework/flutter-wise"
   },
   "engines": {
-    "vscode": "^1.109.0"
+    "vscode": "^1.77.0"
   },
   "categories": [
     "Other"
@@ -75,6 +75,26 @@
       {
         "command": "flutterWise.devices.connect.pair",
         "title": "Flutter Wise: Connect Device by Pairing Code"
+      },
+      {
+        "command": "flutterWise.shortcuts.flutterClean",
+        "title": "Flutter Wise: Flutter Clean"
+      },
+      {
+        "command": "flutterWise.shortcuts.pubGet",
+        "title": "Flutter Wise: Flutter Pub Get"
+      },
+      {
+        "command": "flutterWise.shortcuts.pubCacheRepair",
+        "title": "Flutter Wise: Flutter Pub Cache Repair"
+      },
+      {
+        "command": "flutterWise.shortcuts.flutterBuild",
+        "title": "Flutter Wise: Flutter Build"
+      },
+      {
+        "command": "flutterWise.shortcuts.flutterDoctor",
+        "title": "Flutter Wise: Flutter Doctor"
       }
     ],
     "menus": {
@@ -151,6 +171,11 @@
     "views": {
       "flutterWiseContainer": [
         {
+          "id": "flutterWiseToolsView",
+          "name": "Shortcuts",
+          "type": "webview"
+        },
+        {
           "id": "flutterWiseDevicesView",
           "name": "Devices",
           "type": "webview"
@@ -158,11 +183,6 @@
         {
           "id": "flutterWiseNewProjectView",
           "name": "New Flutter Project",
-          "type": "webview"
-        },
-        {
-          "id": "flutterWiseToolsView",
-          "name": "Shortcuts",
           "type": "webview"
         }
       ]
@@ -189,15 +209,15 @@
     "test": "vscode-test"
   },
   "devDependencies": {
-    "@types/vscode": "^1.109.0",
     "@types/mocha": "^10.0.10",
-    "@types/node": "22.x",
-    "typescript-eslint": "^8.54.0",
-    "eslint": "^9.39.2",
+    "@types/node": "^22.19.17",
+    "@types/vscode": "^1.109.0",
+    "@vscode/test-cli": "^0.0.12",
+    "@vscode/test-electron": "^2.5.2",
     "esbuild": "^0.27.2",
+    "eslint": "^9.39.2",
     "npm-run-all": "^4.1.5",
     "typescript": "^5.9.3",
-    "@vscode/test-cli": "^0.0.12",
-    "@vscode/test-electron": "^2.5.2"
+    "typescript-eslint": "^8.54.0"
   }
 }
